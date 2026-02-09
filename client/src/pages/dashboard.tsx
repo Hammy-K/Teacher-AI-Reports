@@ -91,6 +91,32 @@ export default function Dashboard() {
   const totalHappened = activities.filter(a => a.activityHappened).length;
   const totalNotHappened = totalPlanned - totalHappened;
 
+  const groupedActivities = Object.values(
+    activities.reduce<Record<string, {
+      activityType: string;
+      count: number;
+      happenedCount: number;
+      totalDuration: number;
+      totalPlannedDuration: number;
+      totalAnswered: number;
+      totalCorrect: number;
+    }>>((acc, act) => {
+      const type = act.activityType || "UNKNOWN";
+      if (!acc[type]) {
+        acc[type] = { activityType: type, count: 0, happenedCount: 0, totalDuration: 0, totalPlannedDuration: 0, totalAnswered: 0, totalCorrect: 0 };
+      }
+      acc[type].count++;
+      if (act.activityHappened) acc[type].happenedCount++;
+      acc[type].totalDuration += act.duration || 0;
+      acc[type].totalPlannedDuration += act.plannedDuration || 0;
+      if (act.correctness) {
+        acc[type].totalAnswered += act.correctness.answered;
+        acc[type].totalCorrect += act.correctness.correct;
+      }
+      return acc;
+    }, {})
+  );
+
   return (
     <div className="min-h-screen bg-background" data-testid="dashboard-page">
       <div className="max-w-5xl mx-auto p-6 space-y-8">
@@ -180,33 +206,34 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {activities.map((act, idx) => (
-                    <tr key={act.activityId} className="border-b last:border-0" data-testid={`row-activity-${act.activityId}`}>
-                      <td className="py-3 pr-4 text-muted-foreground">{idx + 1}</td>
-                      <td className="py-3 pr-4 font-medium" data-testid={`text-activity-type-${act.activityId}`}>
-                        {act.activityType || "—"}
-                      </td>
-                      <td className="py-3 pr-4" data-testid={`text-activity-happened-${act.activityId}`}>
-                        {act.activityHappened ? (
-                          <Badge variant="default">Yes</Badge>
-                        ) : (
-                          <Badge variant="secondary">No</Badge>
-                        )}
-                      </td>
-                      <td className="py-3 pr-4" data-testid={`text-activity-duration-${act.activityId}`}>
-                        {act.duration != null ? act.duration : "—"}
-                      </td>
-                      <td className="py-3 pr-4" data-testid={`text-activity-planned-${act.activityId}`}>
-                        {act.plannedDuration != null ? act.plannedDuration : "—"}
-                      </td>
-                      <td className="py-3 pr-4" data-testid={`text-activity-correctness-${act.activityId}`}>
-                        {act.correctness ? (
-                          <span>{act.correctness.percent}% ({act.correctness.correct}/{act.correctness.answered})</span>
-                        ) : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                  {activities.length === 0 && (
+                  {groupedActivities.map((group, idx) => {
+                    const correctnessPercent = group.totalAnswered > 0
+                      ? Math.round((group.totalCorrect / group.totalAnswered) * 100)
+                      : null;
+                    return (
+                      <tr key={group.activityType} className="border-b last:border-0" data-testid={`row-activity-${group.activityType}`}>
+                        <td className="py-3 pr-4 text-muted-foreground">{idx + 1}</td>
+                        <td className="py-3 pr-4 font-medium" data-testid={`text-activity-type-${group.activityType}`}>
+                          {group.activityType}
+                        </td>
+                        <td className="py-3 pr-4" data-testid={`text-activity-happened-${group.activityType}`}>
+                          <Badge variant={group.happenedCount === group.count ? "default" : group.happenedCount > 0 ? "secondary" : "secondary"}>
+                            {group.happenedCount}/{group.count}
+                          </Badge>
+                        </td>
+                        <td className="py-3 pr-4" data-testid={`text-activity-duration-${group.activityType}`}>
+                          {group.totalDuration > 0 ? group.totalDuration : "—"}
+                        </td>
+                        <td className="py-3 pr-4" data-testid={`text-activity-planned-${group.activityType}`}>
+                          {group.totalPlannedDuration > 0 ? group.totalPlannedDuration : "—"}
+                        </td>
+                        <td className="py-3 pr-4" data-testid={`text-activity-correctness-${group.activityType}`}>
+                          {correctnessPercent != null ? `${correctnessPercent}%` : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {groupedActivities.length === 0 && (
                     <tr>
                       <td colSpan={6} className="py-4 text-center text-muted-foreground">No activities found</td>
                     </tr>
