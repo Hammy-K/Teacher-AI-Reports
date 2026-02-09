@@ -154,8 +154,32 @@ export class DatabaseStorage implements IStorage {
       .sort((a, b) => a.time.localeCompare(b.time));
   }
 
+  async getActivityCorrectnessMap(courseSessionId: number): Promise<Record<number, { answered: number; correct: number; percent: number }>> {
+    const polls = await db.select().from(userPolls)
+      .where(eq(userPolls.courseSessionId, courseSessionId));
+
+    const map: Record<number, { answered: number; correct: number }> = {};
+    for (const p of polls) {
+      if (!p.classroomActivityId) continue;
+      if (!map[p.classroomActivityId]) map[p.classroomActivityId] = { answered: 0, correct: 0 };
+      if (p.pollAnswered) {
+        map[p.classroomActivityId].answered++;
+        if (p.isCorrectAnswer) map[p.classroomActivityId].correct++;
+      }
+    }
+
+    const result: Record<number, { answered: number; correct: number; percent: number }> = {};
+    for (const [id, data] of Object.entries(map)) {
+      result[Number(id)] = {
+        ...data,
+        percent: data.answered > 0 ? Math.round((data.correct / data.answered) * 100) : 0,
+      };
+    }
+    return result;
+  }
+
   async getDashboardData(courseSessionId: number): Promise<any> {
-    const [session, transcripts, chats, activities, pollStats, reactionData, students, engagementTimeline] = await Promise.all([
+    const [session, transcripts, chats, activities, pollStats, reactionData, students, engagementTimeline, activityCorrectness] = await Promise.all([
       this.getSessionOverview(),
       this.getTranscripts(courseSessionId),
       this.getChats(courseSessionId),
@@ -164,47 +188,48 @@ export class DatabaseStorage implements IStorage {
       this.getReactionBreakdown(courseSessionId),
       this.getStudentSessions(courseSessionId),
       this.getEngagementTimeline(courseSessionId),
+      this.getActivityCorrectnessMap(courseSessionId),
     ]);
 
     const studentOnly = students.filter(s => s.userType === 'STUDENT');
     const totalStudents = studentOnly.length;
-    const avgActiveTime = totalStudents > 0
-      ? Math.round(studentOnly.reduce((sum, s) => sum + (s.activeTime || 0), 0) / totalStudents * 10) / 10
+
+    const avgLearningTime = totalStudents > 0
+      ? studentOnly.reduce((sum, s) => sum + (s.learningTime || 0), 0) / totalStudents
+      : 0;
+    const teachingTime = session?.teachingTime || 0;
+    const sessionCompletedPercent = teachingTime > 0
+      ? Math.round((avgLearningTime / teachingTime) * 100)
       : 0;
 
-    const sentimentCounts: Record<string, number> = {};
-    for (const s of studentOnly) {
-      const sentiment = s.userSentiment || 'unknown';
-      sentimentCounts[sentiment] = (sentimentCounts[sentiment] || 0) + 1;
-    }
+    const sessionTemperature = session?.sessionTemperature ?? 0;
 
-    const positiveCount = sentimentCounts['positive'] || 0;
-    const sessionTemperature = totalStudents > 0
-      ? Math.round((positiveCount / totalStudents) * 100)
-      : 0;
-
-    const totalMessages = studentOnly.reduce((sum, s) => sum + (s.totalMessages || 0), 0);
-    const totalHandRaises = studentOnly.reduce((sum, s) => sum + (s.totalHandRaise || 0), 0);
-    const avgPollsResponded = totalStudents > 0
-      ? Math.round(studentOnly.reduce((sum, s) => sum + (s.totalPollsResponded || 0), 0) / totalStudents * 10) / 10
-      : 0;
+    const activitiesWithCorrectness = activities.map(a => ({
+      activityId: a.activityId,
+      activityType: a.activityType,
+      startTime: a.startTime,
+      endTime: a.endTime,
+      activityHappened: a.activityHappened,
+      plannedDuration: a.plannedDuration,
+      duration: a.duration,
+      totalMcqs: a.totalMcqs,
+      correctness: activityCorrectness[a.activityId] || null,
+    }));
 
     return {
       session,
       transcripts,
       chats: chats.slice(0, 200),
-      activities,
+      activities: activitiesWithCorrectness,
       pollStats,
       reactionData,
       engagementTimeline,
       studentMetrics: {
         totalStudents,
-        avgActiveTime,
         sessionTemperature,
-        sentimentCounts,
-        totalMessages,
-        totalHandRaises,
-        avgPollsResponded,
+        sessionCompletedPercent,
+        avgLearningTime: Math.round(avgLearningTime * 10) / 10,
+        teachingTime,
       },
       students: studentOnly.map(s => ({
         userId: s.userId,
