@@ -23,6 +23,10 @@ export const courseSessions = pgTable("course_sessions", {
   totalSegments: integer("total_segments"),
   engagementEvents: jsonb("engagement_events"),
   engagementDurations: jsonb("engagement_durations"),
+  positiveUsers: integer("positive_users"),
+  negativeUsers: integer("negative_users"),
+  neutralUsers: integer("neutral_users"),
+  sessionTemperature: real("session_temperature"),
 });
 
 export const sessionTranscripts = pgTable("session_transcripts", {
@@ -67,6 +71,7 @@ export const userPolls = pgTable("user_polls", {
   userId: integer("user_id"),
   questionId: integer("question_id"),
   questionText: text("question_text"),
+  classroomActivityId: integer("classroom_activity_id"),
   isCorrectAnswer: boolean("is_correct_answer"),
   pollAnswered: boolean("poll_answered"),
   pollSeen: boolean("poll_seen"),

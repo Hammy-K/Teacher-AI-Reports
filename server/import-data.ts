@@ -62,6 +62,10 @@ export async function importAllData() {
       totalSegments: safeInt(row.total_segments),
       engagementEvents: row.engagement_events ? JSON.parse(row.engagement_events.replace(/'/g, '"')) : null,
       engagementDurations: row.engagement_durations ? JSON.parse(row.engagement_durations.replace(/'/g, '"')) : null,
+      positiveUsers: safeInt(row.positive_users),
+      negativeUsers: safeInt(row.negative_users),
+      neutralUsers: safeInt(row.neutral_users),
+      sessionTemperature: safeFloat(row.session_temperature),
     };
     await storage.insertCourseSession(data);
   }
@@ -95,7 +99,7 @@ export async function importAllData() {
   const activities: InsertClassroomActivity[] = activityRows.map((row: any) => ({
     activityId: safeInt(row.activity_id) || 0,
     courseSessionId: safeInt(row.course_session_id) || 70712,
-    activityType: row.activity_type || null,
+    activityType: row.type || row.activity_type || null,
     startTime: row.start_time || null,
     endTime: row.end_time || null,
     activityHappened: safeBool(row.activity_happened),
@@ -115,6 +119,7 @@ export async function importAllData() {
     userId: safeInt(row.user_id),
     questionId: safeInt(row.question_id),
     questionText: row.question_text || null,
+    classroomActivityId: safeInt(row.classroom_activity_id),
     isCorrectAnswer: safeBool(row.is_correct_answer),
     pollAnswered: safeBool(row.poll_answered),
     pollSeen: safeBool(row.poll_seen),

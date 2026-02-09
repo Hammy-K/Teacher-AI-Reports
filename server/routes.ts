@@ -30,7 +30,11 @@ async function pushSchema() {
       course_session_status TEXT,
       total_segments INTEGER,
       engagement_events JSONB,
-      engagement_durations JSONB
+      engagement_durations JSONB,
+      positive_users INTEGER,
+      negative_users INTEGER,
+      neutral_users INTEGER,
+      session_temperature REAL
     )
   `);
 
@@ -83,6 +87,7 @@ async function pushSchema() {
       user_id INTEGER,
       question_id INTEGER,
       question_text TEXT,
+      classroom_activity_id INTEGER,
       is_correct_answer BOOLEAN,
       poll_answered BOOLEAN,
       poll_seen BOOLEAN,
