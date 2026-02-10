@@ -215,9 +215,8 @@ function QAEvaluationSection({ evaluation }: { evaluation: DashboardData["qaEval
                 </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2 text-sm flex-1">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2 text-sm flex-1">
               <div><span className="text-muted-foreground">الأسئلة:</span> <span className="font-medium">{evaluation.summary.totalQuestions}</span></div>
-              <div><span className="text-muted-foreground">معدل الاستجابة:</span> <span className="font-medium">{evaluation.summary.responseRate}%</span></div>
               <div><span className="text-muted-foreground">حديث المعلم:</span> <span className="font-medium">{evaluation.summary.teacherTalkMin} د</span></div>
               <div><span className="text-muted-foreground">نشاط الطلاب:</span> <span className="font-medium">{evaluation.summary.studentActivePercent}%</span></div>
             </div>
