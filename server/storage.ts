@@ -397,15 +397,71 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    this.generatePedagogyFeedback(transcriptTimes, chats, session, wentWell, needsImprovement);
+    this.generatePedagogyFeedback(transcriptTimes, chats, session, activities, wentWell, needsImprovement);
 
     return { wentWell, needsImprovement };
+  }
+
+  private extractTopics(texts: string[]): string {
+    const topicMap: [RegExp, string][] = [
+      [/الدائر[ةه]/i, "circles"],
+      [/المستقيم|مستقيمات/i, "straight lines in circles"],
+      [/نصف القطر|أنصاف.*القطر/i, "radius"],
+      [/القطر/i, "diameter"],
+      [/الوتر|وتر/i, "chord"],
+      [/مماس|التماس/i, "tangent"],
+      [/الزاوي[ةه]\s*المركزي[ةه]/i, "central angles"],
+      [/الزاوي[ةه]\s*المحيطي[ةه]/i, "inscribed angles"],
+      [/الزوايا|زاوي[ةه]/i, "angles"],
+      [/المحيط/i, "circumference"],
+      [/المساح[ةه]/i, "area"],
+      [/المضلع|مضلعات|رباعي/i, "polygons"],
+      [/القوس/i, "arc"],
+      [/طاء.*نق|نق\s*تربيع/i, "circle formulas"],
+      [/مربع|مثلث|سداسي/i, "shapes inside circles"],
+      [/اشرح|اشرحي|يلا.*اشرح/i, "calling student to explain"],
+    ];
+
+    const combined = texts.join(' ');
+    const found: string[] = [];
+    for (const [pattern, label] of topicMap) {
+      if (pattern.test(combined) && !found.includes(label)) {
+        found.push(label);
+      }
+    }
+    return found.length > 0 ? found.join(', ') : "general instruction";
+  }
+
+  private detectChatConfusion(chats: SessionChat[], startSec: number, endSec: number): { confused: boolean; examples: string[] } {
+    const confusionPatterns = /ما\s*فهم|مو\s*فاهم|مو\s*واضح|ما\s*عرف|صعب|ما\s*فهمت|مش\s*فاهم|كيف|وش\s*يعني|يعني\s*ايش|ما\s*وضح|\?\?|اعيد/i;
+    const frustrationPatterns = /😭|😢|😞|💔/;
+
+    const nearbyChats = chats.filter(c => {
+      if (c.userType !== 'STUDENT') return false;
+      const ts = this.parseTimeToSeconds(c.createdAtTs || '');
+      if (ts === null) return false;
+      return ts >= startSec - 30 && ts <= endSec + 60;
+    });
+
+    const examples: string[] = [];
+    let confused = false;
+    for (const chat of nearbyChats) {
+      const text = chat.messageText || '';
+      if (confusionPatterns.test(text) || frustrationPatterns.test(text)) {
+        confused = true;
+        if (examples.length < 3) {
+          examples.push(`"${text.substring(0, 50)}" — ${chat.creatorName || 'Student'}`);
+        }
+      }
+    }
+    return { confused, examples };
   }
 
   private generatePedagogyFeedback(
     transcriptTimes: { startSec: number | null; endSec: number | null; text: string }[],
     chats: SessionChat[],
     session: any,
+    activities: any[],
     wentWell: any[],
     needsImprovement: any[]
   ): void {
@@ -450,6 +506,44 @@ export class DatabaseStorage implements IStorage {
       return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     };
 
+    const segmentDetails: any[] = [];
+    for (const seg of longSegments) {
+      const segTexts = sorted
+        .filter(t => t.startSec! >= seg.startSec && t.endSec! <= seg.endSec)
+        .map(t => t.text);
+      const topics = this.extractTopics(segTexts);
+      const durationMin = Math.round(seg.durationSec / 60 * 10) / 10;
+
+      const nearbyActivities = activities.filter(a => {
+        if (!a.endTime || !a.correctness) return false;
+        const actEndSec = this.parseTimeToSeconds(a.endTime);
+        if (actEndSec === null) return false;
+        return actEndSec >= seg.startSec - 60 && actEndSec <= seg.endSec + 60;
+      });
+
+      const chatContext = this.detectChatConfusion(chats, seg.startSec, seg.endSec);
+
+      let context = `${formatTime(seg.startSec)}–${formatTime(seg.endSec)} (${durationMin} min): Teacher was discussing ${topics}.`;
+
+      if (nearbyActivities.length > 0) {
+        const actDetails = nearbyActivities.map(a => {
+          const pct = a.correctness?.percent ?? 0;
+          return `${a.activityType} scored ${pct}% correct`;
+        });
+        if (nearbyActivities.some(a => (a.correctness?.percent ?? 100) < 50)) {
+          context += ` This followed a low-scoring activity (${actDetails.join('; ')}) — the teacher was likely re-explaining the concept.`;
+        } else {
+          context += ` Near activity: ${actDetails.join('; ')}.`;
+        }
+      }
+
+      if (chatContext.confused) {
+        context += ` Students showed confusion in chat: ${chatContext.examples.join('; ')}.`;
+      }
+
+      segmentDetails.push(context);
+    }
+
     if (longSegments.length === 0) {
       wentWell.push({
         category: "pedagogy",
@@ -465,6 +559,7 @@ export class DatabaseStorage implements IStorage {
         detail: `Teacher had ${longSegments.length} stretch${longSegments.length > 1 ? 'es' : ''} of non-stop talking exceeding 2 minutes. The longest was ${longestMin} min (${formatTime(longestSeg.startSec)}–${formatTime(longestSeg.endSec)}). Break up long stretches with questions or student interaction.`,
         recommended: "Under 2 min per stretch",
         actual: `${longestMin} min longest stretch`,
+        segments: segmentDetails,
       });
     }
 
@@ -550,7 +645,6 @@ export class DatabaseStorage implements IStorage {
       });
     });
 
-    const totalBursts = chatBursts.length;
     const engagedBursts = burstsOverlappingTalk.length;
 
     if (engagedBursts >= 3) {
