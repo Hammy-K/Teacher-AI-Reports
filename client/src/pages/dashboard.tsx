@@ -7,7 +7,7 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/component
 import {
   Users, Clock, ThermometerSun, CheckCircle, BarChart3, Percent,
   ThumbsUp, AlertTriangle, BookOpen, ClipboardCheck, ChevronDown, ChevronRight,
-  ListChecks, UsersRound, TrendingUp, TrendingDown, Target, Timer, Lightbulb
+  ListChecks, UsersRound, Target, Timer, Lightbulb, MessageSquare, GraduationCap
 } from "lucide-react";
 
 interface ActivityCorrectness {
@@ -88,6 +88,9 @@ interface DashboardData {
   session: {
     courseSessionId: number;
     courseSessionName: string;
+    teacherName: string;
+    topic: string;
+    level: string;
     teachingTime: number;
     sessionTime: number;
     courseSessionStatus: string;
@@ -604,50 +607,77 @@ export default function Dashboard() {
     <div className="min-h-screen bg-background" data-testid="dashboard-page">
       <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
 
-        <div className="space-y-1" data-testid="dashboard-header">
-          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-dashboard-title">Session Analytics</h1>
-          <p className="text-sm text-muted-foreground" data-testid="text-session-name">
-            {session.courseSessionName} &middot; Session {session.courseSessionId}
-          </p>
+        <div className="rounded-md bg-[hsl(43,55%,70%)]/15 dark:bg-[hsl(43,40%,30%)]/20 border border-[hsl(43,55%,70%)]/30 dark:border-[hsl(43,40%,40%)]/30 p-5 space-y-3" data-testid="dashboard-header">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center justify-center h-9 w-9 rounded-md bg-primary/15 text-primary">
+              <GraduationCap className="h-5 w-5" />
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight" data-testid="text-dashboard-title">Session Report</h1>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2 text-sm">
+            <div data-testid="text-session-id">
+              <span className="text-muted-foreground">Session ID:</span>{" "}
+              <span className="font-medium">{session.courseSessionId}</span>
+            </div>
+            <div data-testid="text-teacher-name">
+              <span className="text-muted-foreground">Teacher:</span>{" "}
+              <span className="font-medium">{session.teacherName}</span>
+            </div>
+            <div data-testid="text-level">
+              <span className="text-muted-foreground">Level:</span>{" "}
+              <span className="font-medium">{session.level || 'N/A'}</span>
+            </div>
+            <div data-testid="text-topic">
+              <span className="text-muted-foreground">Topic:</span>{" "}
+              <span className="font-medium">{session.topic}</span>
+            </div>
+          </div>
         </div>
 
-        <Card data-testid="card-overview-metrics">
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
-              <MetricTile
-                icon={<CheckCircle className="h-3.5 w-3.5" />}
-                label="Session Correctness"
-                value={`${pollStats.correctnessPercent}%`}
-                testId="metric-correctness"
-              />
-              <MetricTile
-                icon={<Users className="h-3.5 w-3.5" />}
-                label="Attendance"
-                value={String(studentMetrics.totalStudents)}
-                testId="metric-attendance"
-              />
-              <MetricTile
-                icon={<ThermometerSun className="h-3.5 w-3.5" />}
-                label="Temperature"
-                value={`${sessionTemp}%`}
-                testId="metric-temperature"
-              />
-              <MetricTile
-                icon={<Clock className="h-3.5 w-3.5" />}
-                label="Teaching Time"
-                value={`${teachingMinutes} min`}
-                testId="metric-teaching-time"
-              />
-              <MetricTile
-                icon={<Percent className="h-3.5 w-3.5" />}
-                label="Session Completed"
-                value={`${studentMetrics.sessionCompletedPercent}%`}
-                sub={`avg ${studentMetrics.avgLearningTime} / ${teachingMinutes} min`}
-                testId="metric-session-completed"
-              />
-            </div>
-          </CardContent>
-        </Card>
+        <div className="space-y-3">
+          <SectionHeading
+            icon={<BarChart3 className="h-4 w-4" />}
+            title="Session Summary"
+            testId="heading-session-summary"
+          />
+          <Card data-testid="card-session-summary">
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+                <MetricTile
+                  icon={<Users className="h-3.5 w-3.5" />}
+                  label="Attendance"
+                  value={String(studentMetrics.totalStudents)}
+                  testId="metric-attendance"
+                />
+                <MetricTile
+                  icon={<CheckCircle className="h-3.5 w-3.5" />}
+                  label="Session Correctness"
+                  value={`${pollStats.correctnessPercent}%`}
+                  testId="metric-correctness"
+                />
+                <MetricTile
+                  icon={<ThermometerSun className="h-3.5 w-3.5" />}
+                  label="Temperature"
+                  value={`${sessionTemp}%`}
+                  testId="metric-temperature"
+                />
+                <MetricTile
+                  icon={<Clock className="h-3.5 w-3.5" />}
+                  label="Teaching Time"
+                  value={`${teachingMinutes} min`}
+                  testId="metric-teaching-time"
+                />
+                <MetricTile
+                  icon={<Percent className="h-3.5 w-3.5" />}
+                  label="Session Completed"
+                  value={`${studentMetrics.sessionCompletedPercent}%`}
+                  sub={`avg ${studentMetrics.avgLearningTime} / ${teachingMinutes} min`}
+                  testId="metric-session-completed"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
         <div className="space-y-3" data-testid="section-activities-table">
           <SectionHeading
@@ -665,7 +695,6 @@ export default function Dashboard() {
                       <th className="pb-3 pr-4 text-left font-medium text-muted-foreground">Activity Type</th>
                       <th className="pb-3 pr-4 text-left font-medium text-muted-foreground">Completed</th>
                       <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">Duration</th>
-                      <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">Planned</th>
                       <th className="pb-3 text-right font-medium text-muted-foreground">Correctness</th>
                     </tr>
                   </thead>
@@ -675,7 +704,6 @@ export default function Dashboard() {
                         ? Math.round((group.totalCorrect / group.totalAnswered) * 100)
                         : null;
                       const durationRound = Math.round(group.totalDurationMin * 10) / 10;
-                      const plannedRound = Math.round(group.totalPlannedDurationMin * 10) / 10;
                       return (
                         <tr key={group.activityType} className="border-b last:border-0" data-testid={`row-activity-${group.activityType}`}>
                           <td className="py-3 pr-4 font-medium">{group.activityType}</td>
@@ -687,9 +715,6 @@ export default function Dashboard() {
                           <td className="py-3 pr-4 text-right tabular-nums">
                             {durationRound > 0 ? `${durationRound} min` : "\u2014"}
                           </td>
-                          <td className="py-3 pr-4 text-right tabular-nums">
-                            {plannedRound > 0 ? `${plannedRound} min` : "\u2014"}
-                          </td>
                           <td className="py-3 text-right">
                             {correctnessPercent != null ? (
                               <span className="tabular-nums">{correctnessPercent}%</span>
@@ -700,7 +725,7 @@ export default function Dashboard() {
                     })}
                     {groupedActivities.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="py-4 text-center text-muted-foreground">No activities found</td>
+                        <td colSpan={4} className="py-4 text-center text-muted-foreground">No activities found</td>
                       </tr>
                     )}
                   </tbody>
@@ -725,9 +750,9 @@ export default function Dashboard() {
 
         <PedagogySection
           items={{ wentWell: pedWentWell, needsImprovement: pedNeedsImprovement }}
-          prefix="pedagogy"
-          title="Pedagogy"
-          icon={<BookOpen className="h-4 w-4" />}
+          prefix="other-comments"
+          title="Other Comments"
+          icon={<MessageSquare className="h-4 w-4" />}
         />
 
       </div>

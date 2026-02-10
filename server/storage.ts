@@ -178,6 +178,14 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
+  private parseSessionNameParts(name: string): { topic: string; level: string } {
+    const match = name?.match(/^(.+?)(L\d+)$/);
+    if (match) {
+      return { topic: match[1].trim(), level: match[2] };
+    }
+    return { topic: name || '', level: '' };
+  }
+
   async getDashboardData(courseSessionId: number): Promise<any> {
     const [session, transcripts, chats, activities, pollStats, reactionData, students, engagementTimeline, activityCorrectness] = await Promise.all([
       this.getSessionOverview(),
@@ -190,6 +198,10 @@ export class DatabaseStorage implements IStorage {
       this.getEngagementTimeline(courseSessionId),
       this.getActivityCorrectnessMap(courseSessionId),
     ]);
+
+    const teacherRecord = students.find((s: any) => s.userType === 'TEACHER');
+    const teacherName = teacherRecord?.userName || 'Unknown Teacher';
+    const { topic, level } = this.parseSessionNameParts(session?.courseSessionName || '');
 
     const studentOnly = students.filter(s => s.userType === 'STUDENT');
     const totalStudents = studentOnly.length;
@@ -223,7 +235,12 @@ export class DatabaseStorage implements IStorage {
     );
 
     return {
-      session,
+      session: {
+        ...session,
+        teacherName,
+        topic,
+        level,
+      },
       transcripts,
       chats: chats.slice(0, 200),
       activities: activitiesWithCorrectness,
