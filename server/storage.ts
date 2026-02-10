@@ -218,8 +218,8 @@ export class DatabaseStorage implements IStorage {
 
     const feedback = this.generateFeedback(activitiesWithCorrectness, transcripts, chats, session, pollStats);
 
-    const exitTicketAnalysis = await this.generateExitTicketAnalysis(
-      courseSessionId, activitiesWithCorrectness, transcripts, totalStudents
+    const activityAnalyses = await this.generateAllActivityAnalyses(
+      courseSessionId, activitiesWithCorrectness, transcripts, chats, totalStudents, feedback
     );
 
     return {
@@ -231,7 +231,7 @@ export class DatabaseStorage implements IStorage {
       reactionData,
       engagementTimeline,
       feedback,
-      exitTicketAnalysis,
+      activityAnalyses,
       studentMetrics: {
         totalStudents,
         sessionTemperature,
@@ -253,29 +253,70 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  private async generateExitTicketAnalysis(
+  private async generateAllActivityAnalyses(
     courseSessionId: number,
     activities: any[],
     transcripts: SessionTranscript[],
+    chats: SessionChat[],
+    totalStudents: number,
+    feedback: { wentWell: any[]; needsImprovement: any[] }
+  ): Promise<any[]> {
+    const targetTypes = ['SECTION_CHECK', 'TEAM_EXERCISE', 'EXIT_TICKET'];
+    const typeOrder: Record<string, number> = { SECTION_CHECK: 0, TEAM_EXERCISE: 1, EXIT_TICKET: 2 };
+    const analyses: any[] = [];
+
+    for (const actType of targetTypes) {
+      const typeActivities = activities.filter(a => a.activityType === actType && a.activityHappened);
+      if (typeActivities.length === 0) continue;
+
+      const instances: any[] = [];
+      for (const act of typeActivities) {
+        const instance = await this.generateSingleActivityAnalysis(
+          courseSessionId, act, transcripts, chats, totalStudents
+        );
+
+        const actLabel = `${act.activityType} (${act.correctness?.percent ?? 0}% correct)`;
+        const relatedWell = feedback.wentWell.filter(f =>
+          f.activityId === act.activityId
+        );
+        const relatedImprove = feedback.needsImprovement.filter(f =>
+          f.activityId === act.activityId
+        );
+
+        instance.feedback = { wentWell: relatedWell, needsImprovement: relatedImprove };
+        instances.push(instance);
+      }
+
+      const typeLabel = actType === 'SECTION_CHECK' ? 'Section Checks'
+        : actType === 'TEAM_EXERCISE' ? 'Team Exercises'
+        : 'Exit Ticket';
+
+      analyses.push({
+        activityType: actType,
+        label: typeLabel,
+        sortOrder: typeOrder[actType] ?? 99,
+        instances,
+      });
+    }
+
+    analyses.sort((a, b) => a.sortOrder - b.sortOrder);
+    return analyses;
+  }
+
+  private async generateSingleActivityAnalysis(
+    courseSessionId: number,
+    act: any,
+    transcripts: SessionTranscript[],
+    chats: SessionChat[],
     totalStudents: number
   ): Promise<any> {
-    const exitTickets = activities.filter(a => a.activityType === 'EXIT_TICKET' && a.activityHappened);
-    if (exitTickets.length === 0) return null;
-
-    const et = exitTickets[0];
-    const etStartSec = this.parseTimeToSeconds(et.startTime || '');
-    const etEndSec = this.parseTimeToSeconds(et.endTime || '');
-
     const polls = await db.select().from(userPolls)
       .where(eq(userPolls.courseSessionId, courseSessionId));
 
-    const chats = await db.select().from(sessionChats)
-      .where(eq(sessionChats.courseSessionId, courseSessionId));
-
-    const etPolls = polls.filter(p => p.classroomActivityId === et.activityId);
+    const actPolls = polls.filter(p => p.classroomActivityId === act.activityId);
 
     const byQuestion: Record<string, { text: string; seen: number; answered: number; correct: number }> = {};
-    for (const p of etPolls) {
+    for (const p of actPolls) {
       const qId = String(p.questionId || 'unknown');
       if (!byQuestion[qId]) {
         byQuestion[qId] = { text: p.questionText || '', seen: 0, answered: 0, correct: 0 };
@@ -307,8 +348,8 @@ export class DatabaseStorage implements IStorage {
         insights.push(`Acceptable but some students still struggled — may need brief review next session.`);
       } else if (percent >= 40) {
         insights.push(`Low correctness — this topic needs further explanation or re-teaching in the next session.`);
-      } else {
-        insights.push(`Very low correctness — the concept was not understood by the majority. The explanation may have been too confusing or too brief before the exit ticket.`);
+      } else if (q.answered > 0) {
+        insights.push(`Very low correctness — the concept was not understood by the majority. The explanation may have been too confusing or too brief before the activity.`);
       }
 
       return {
@@ -322,8 +363,11 @@ export class DatabaseStorage implements IStorage {
       };
     });
 
-    const totalSeen = new Set(etPolls.filter(p => p.pollSeen).map(p => p.userId)).size;
-    const totalAnswered = new Set(etPolls.filter(p => p.pollAnswered).map(p => p.userId)).size;
+    const totalSeen = new Set(actPolls.filter(p => p.pollSeen).map(p => p.userId)).size;
+    const totalAnswered = new Set(actPolls.filter(p => p.pollAnswered).map(p => p.userId)).size;
+
+    const etStartSec = this.parseTimeToSeconds(act.startTime || '');
+    const etEndSec = this.parseTimeToSeconds(act.endTime || '');
 
     let teacherTalkDuring = false;
     let teacherTalkOverlapMin = 0;
@@ -353,43 +397,45 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    const etDurationMin = Math.round(et.duration / 60 * 10) / 10;
-    const etPlannedMin = Math.round(et.plannedDuration / 60 * 10) / 10;
-
     const overallInsights: string[] = [];
 
     if (totalAnswered < totalStudents) {
       const missed = totalStudents - totalAnswered;
       const missedPct = Math.round((missed / totalStudents) * 100);
-      overallInsights.push(`${missed} students (${missedPct}%) did not complete the exit ticket — they may have run out of time or disengaged before the activity started.`);
+      overallInsights.push(`${missed} students (${missedPct}%) did not complete this activity — they may have run out of time or disengaged.`);
     }
 
-    if (teacherTalkDuring) {
+    if (act.activityType === 'EXIT_TICKET' && teacherTalkDuring) {
       overallInsights.push(`Teacher was talking for ${teacherTalkOverlapMin} min during the exit ticket, discussing: ${teacherTalkTopics}. This may have given students hints or distracted them — exit tickets should be completed independently to accurately measure understanding.`);
+    } else if (teacherTalkDuring) {
+      overallInsights.push(`Teacher was talking for ${teacherTalkOverlapMin} min during this activity, discussing: ${teacherTalkTopics}.`);
     }
 
-    const overallPercent = et.correctness?.percent ?? 0;
+    const overallPercent = act.correctness?.percent ?? 0;
     if (overallPercent >= 75) {
-      overallInsights.push(`Overall correctness is strong at ${overallPercent}% — students demonstrated good understanding of the lesson content.`);
+      overallInsights.push(`Overall correctness is strong at ${overallPercent}% — students demonstrated good understanding.`);
     } else if (overallPercent >= 50) {
-      overallInsights.push(`Overall correctness of ${overallPercent}% is moderate — some concepts from the lesson were not fully grasped by all students.`);
-    } else {
-      overallInsights.push(`Overall correctness is low at ${overallPercent}% — the lesson content may need to be revisited. Consider whether the explanation was too fast, too confusing, or if insufficient time was spent on key concepts.`);
+      overallInsights.push(`Overall correctness of ${overallPercent}% is moderate — some concepts were not fully grasped by all students.`);
+    } else if (overallPercent > 0) {
+      overallInsights.push(`Overall correctness is low at ${overallPercent}% — the content may need to be revisited or explained differently.`);
     }
 
-    if (et.duration < et.plannedDuration * 0.7) {
-      overallInsights.push(`Exit ticket was shorter than planned (${etDurationMin} min vs ${etPlannedMin} min planned) — less time was spent, which may explain incomplete responses.`);
-    } else if (et.duration > et.plannedDuration * 1.3) {
-      overallInsights.push(`Exit ticket ran longer than planned (${etDurationMin} min vs ${etPlannedMin} min planned) — students may have needed more time to process the questions.`);
+    const etDurationMin = Math.round((act.duration || 0) / 60 * 10) / 10;
+    const etPlannedMin = Math.round((act.plannedDuration || 0) / 60 * 10) / 10;
+
+    if (act.duration < act.plannedDuration * 0.7 && act.plannedDuration > 0) {
+      overallInsights.push(`Activity was shorter than planned (${etDurationMin} min vs ${etPlannedMin} min planned) — less time was spent, which may explain incomplete responses.`);
+    } else if (act.duration > act.plannedDuration * 1.3 && act.plannedDuration > 0) {
+      overallInsights.push(`Activity ran longer than planned (${etDurationMin} min vs ${etPlannedMin} min planned) — students may have needed more time.`);
     }
 
-    const studentChats = chats.filter(c => c.userType === 'STUDENT');
     if (etStartSec !== null && etEndSec !== null) {
-      const chatsDuringET = studentChats.filter(c => {
+      const studentChats = chats.filter(c => c.userType === 'STUDENT');
+      const chatsDuringAct = studentChats.filter(c => {
         const ts = this.parseTimeToSeconds(c.createdAtTs || '');
         return ts !== null && ts >= etStartSec && ts <= etEndSec;
       });
-      const unansweredChats = chatsDuringET.filter(c => {
+      const unansweredChats = chatsDuringAct.filter(c => {
         const chatTs = this.parseTimeToSeconds(c.createdAtTs || '');
         if (chatTs === null) return false;
         const hasTeacherReply = chats.some(r => {
@@ -400,26 +446,27 @@ export class DatabaseStorage implements IStorage {
         return !hasTeacherReply;
       });
       if (unansweredChats.length > 0) {
-        overallInsights.push(`${unansweredChats.length} student chat message${unansweredChats.length > 1 ? 's' : ''} during the exit ticket were not responded to — students may have been asking for clarification.`);
+        overallInsights.push(`${unansweredChats.length} student chat message${unansweredChats.length > 1 ? 's' : ''} during this activity were not responded to — students may have been asking for clarification.`);
       }
     }
 
     const highCorrectQs = questions.filter(q => q.percent >= 80);
-    if (highCorrectQs.length > 0 && teacherTalkDuring) {
+    if (highCorrectQs.length > 0 && teacherTalkDuring && act.activityType === 'EXIT_TICKET') {
       overallInsights.push(`${highCorrectQs.length} question${highCorrectQs.length > 1 ? 's' : ''} had high correctness (80%+), yet the teacher was still talking during the exit ticket — time may have been wasted providing help on content students already understood.`);
     }
 
     return {
-      activityId: et.activityId,
-      startTime: et.startTime,
-      endTime: et.endTime,
-      duration: et.duration,
-      plannedDuration: et.plannedDuration,
-      totalMcqs: et.totalMcqs,
+      activityId: act.activityId,
+      activityType: act.activityType,
+      startTime: act.startTime,
+      endTime: act.endTime,
+      duration: act.duration || 0,
+      plannedDuration: act.plannedDuration || 0,
+      totalMcqs: act.totalMcqs || 0,
       totalStudents,
       studentsWhoSaw: totalSeen,
       studentsWhoAnswered: totalAnswered,
-      overallCorrectness: et.correctness,
+      overallCorrectness: act.correctness,
       questions,
       teacherTalkDuring,
       teacherTalkOverlapMin,
@@ -502,12 +549,14 @@ export class DatabaseStorage implements IStorage {
         if (explanationTimeSec <= 15) {
           wentWell.push({
             category: "time_management",
+            activityId: act.activityId,
             activity: actLabel,
             detail: `Teacher spent ${explanationTimeSec}s explaining after this activity — appropriate since ${correctPercent}% of students got it correct. No extra explanation needed.`,
           });
         } else {
           needsImprovement.push({
             category: "time_management",
+            activityId: act.activityId,
             activity: actLabel,
             detail: `Teacher spent ${explanationTimeSec}s explaining after this activity, but ${correctPercent}% of students already got it correct. Should spend no more than 10–15 seconds and move on.`,
             recommended: "10–15 seconds",
@@ -518,12 +567,14 @@ export class DatabaseStorage implements IStorage {
         if (calledStudentOnStage) {
           needsImprovement.push({
             category: "student_stage",
+            activityId: act.activityId,
             activity: actLabel,
             detail: `A student was called on stage to explain, but ${correctPercent}% of the class already answered correctly. Calling students on stage is unnecessary when class average is above 75%.`,
           });
         } else {
           wentWell.push({
             category: "student_stage",
+            activityId: act.activityId,
             activity: actLabel,
             detail: `Teacher did not call a student on stage — good decision since ${correctPercent}% of students got it correct and no extra explanation was needed.`,
           });
@@ -532,12 +583,14 @@ export class DatabaseStorage implements IStorage {
         if (explanationTimeSec >= 30 && explanationTimeSec <= 60) {
           wentWell.push({
             category: "time_management",
+            activityId: act.activityId,
             activity: actLabel,
             detail: `Teacher spent ${explanationTimeSec}s explaining after this activity — appropriate for ${correctPercent}% correctness. The 30–60 second range is ideal here.`,
           });
         } else if (explanationTimeSec < 30) {
           needsImprovement.push({
             category: "time_management",
+            activityId: act.activityId,
             activity: actLabel,
             detail: `Teacher spent only ${explanationTimeSec}s explaining after this activity, but ${correctPercent}% correctness suggests 30–60 seconds of explanation would be appropriate.`,
             recommended: "30–60 seconds",
@@ -546,6 +599,7 @@ export class DatabaseStorage implements IStorage {
         } else {
           needsImprovement.push({
             category: "time_management",
+            activityId: act.activityId,
             activity: actLabel,
             detail: `Teacher spent ${explanationTimeSec}s explaining after this activity. With ${correctPercent}% correctness, 30–60 seconds would be sufficient — the extra time could be used elsewhere.`,
             recommended: "30–60 seconds",
@@ -556,12 +610,14 @@ export class DatabaseStorage implements IStorage {
         if (explanationTimeSec >= 60 && explanationTimeSec <= 120) {
           wentWell.push({
             category: "time_management",
+            activityId: act.activityId,
             activity: actLabel,
             detail: `Teacher spent ${explanationTimeSec}s explaining after this activity — appropriate for low correctness of ${correctPercent}%. Students needed this extra time.`,
           });
         } else if (explanationTimeSec < 60) {
           needsImprovement.push({
             category: "time_management",
+            activityId: act.activityId,
             activity: actLabel,
             detail: `Teacher spent only ${explanationTimeSec}s explaining after this activity, but only ${correctPercent}% of students got it correct. Should spend up to 2 minutes to ensure understanding.`,
             recommended: "60–120 seconds",
@@ -570,6 +626,7 @@ export class DatabaseStorage implements IStorage {
         } else {
           wentWell.push({
             category: "time_management",
+            activityId: act.activityId,
             activity: actLabel,
             detail: `Teacher spent ${explanationTimeSec}s explaining after this activity — thorough explanation was appropriate since only ${correctPercent}% of students got it correct.`,
           });
