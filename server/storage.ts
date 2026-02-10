@@ -200,7 +200,8 @@ export class DatabaseStorage implements IStorage {
     ]);
 
     const teacherRecord = students.find((s: any) => s.userType === 'TEACHER');
-    const teacherName = teacherRecord?.userName || 'معلم غير معروف';
+    let teacherName = teacherRecord?.userName || 'معلم غير معروف';
+    teacherName = teacherName.replace(/أ\.(?!\s)/g, 'أ. ').replace(/\bال\s+/g, 'آل ').trim();
     const { topic, level } = this.parseSessionNameParts(session?.courseSessionName || '');
 
     const studentOnly = students.filter(s => s.userType === 'STUDENT');
@@ -357,9 +358,9 @@ export class DatabaseStorage implements IStorage {
     else if (totalQuestions >= 6) { evidence1.push(`تم تغطية ${totalQuestions} سؤال`); }
     else { contentScore -= 0.5; evidence1.push(`${totalQuestions} أسئلة فقط — تغطية محدودة للمحتوى`); }
 
-    if (overallCorrectness >= 70) { contentScore += 0.5; evidence1.push(`نسبة صحة إجمالية ${overallCorrectness}% — فهم قوي`); }
-    else if (overallCorrectness >= 50) { evidence1.push(`نسبة صحة إجمالية ${overallCorrectness}% — فهم متوسط`); }
-    else { contentScore -= 0.5; evidence1.push(`نسبة صحة إجمالية ${overallCorrectness}% — ضعف في استيعاب المحتوى`); }
+    if (overallCorrectness >= 70) { contentScore += 0.5; evidence1.push(`نسبة الإجابات الصحيحة ${overallCorrectness}% — فهم قوي`); }
+    else if (overallCorrectness >= 50) { evidence1.push(`نسبة الإجابات الصحيحة ${overallCorrectness}% — فهم متوسط`); }
+    else { contentScore -= 0.5; evidence1.push(`نسبة الإجابات الصحيحة ${overallCorrectness}% — ضعف في استيعاب المحتوى`); }
 
     const highQs = (pollStats.byQuestion || []).filter((q: any) => q.percent >= 70).length;
     const lowQs = (pollStats.byQuestion || []).filter((q: any) => q.percent < 40).length;
@@ -378,7 +379,7 @@ export class DatabaseStorage implements IStorage {
         overallCorrectness < 60 ? "أبطئ في الشرح وأضف المزيد من الأمثلة المحلولة قبل التحقق من الفهم" : "",
         totalQuestions < 8 ? "أضف المزيد من أسئلة التحقق من الفهم خلال الحصة" : "",
       ].filter(Boolean) : ["حافظ على مستوى جودة التدريس الحالي"],
-      notes: `${totalQuestions} سؤال، متوسط الصحة ${overallCorrectness}%، ${highQs} قوي / ${lowQs} ضعيف`,
+      notes: `${totalQuestions} سؤال، نسبة الإجابات الصحيحة ${overallCorrectness}%، ${highQs} قوي / ${lowQs} ضعيف`,
     });
 
     // 2. Student Engagement (دعم الطلاب وتحفيزهم)
@@ -540,9 +541,9 @@ export class DatabaseStorage implements IStorage {
     const exitTicketInstance = exitTicketAnalysis?.instances?.[0];
     if (exitTicketInstance?.teacherTalkDuring) {
       mistakeScore -= 1;
-      evidence6.push(`كان المعلم يتحدث أثناء تذكرة الخروج لمدة ${exitTicketInstance.teacherTalkOverlapMin} د — يجب أن يجيب الطلاب بشكل مستقل`);
+      evidence6.push(`كان المعلم يتحدث أثناء اختبار الفهم النهائي لمدة ${exitTicketInstance.teacherTalkOverlapMin} د — يجب أن يجيب الطلاب بشكل مستقل`);
     } else {
-      evidence6.push("لم يتحدث المعلم أثناء تذكرة الخروج — تم اتباع البروتوكول الصحيح");
+      evidence6.push("لم يتحدث المعلم أثناء اختبار الفهم النهائي — تم اتباع البروتوكول الصحيح");
     }
 
     const tmImprovements = feedback.needsImprovement.filter((f: any) => f.category === 'time_management');
@@ -564,12 +565,12 @@ export class DatabaseStorage implements IStorage {
       score: mistakeScore,
       evidence: evidence6,
       recommendations: mistakeScore < 4 ? [
-        exitTicketInstance?.teacherTalkDuring ? "لا تتحدث أثناء تذكرة الخروج — دع الطلاب يجيبون بشكل مستقل" : "",
+        exitTicketInstance?.teacherTalkDuring ? "لا تتحدث أثناء اختبار الفهم النهائي — دع الطلاب يجيبون بشكل مستقل" : "",
         tmImprovements.length > 0 ? "راجع توزيع الوقت بعد كل نشاط بناءً على نسبة صحة الطلاب" : "",
       ].filter(Boolean) : ["لم يتم اكتشاف أخطاء كبيرة"],
       notes: exitTicketInstance?.teacherTalkDuring
-        ? `تحدث المعلم ${exitTicketInstance.teacherTalkOverlapMin} د أثناء تذكرة الخروج`
-        : "تم اتباع بروتوكول تذكرة الخروج بشكل صحيح",
+        ? `تحدث المعلم ${exitTicketInstance.teacherTalkOverlapMin} د أثناء اختبار الفهم النهائي`
+        : "تم اتباع بروتوكول اختبار الفهم النهائي بشكل صحيح",
     });
 
     // 7. Distinct Moments (لحظات تميّز من الأستاذ)
@@ -637,9 +638,9 @@ export class DatabaseStorage implements IStorage {
     let objScore = 3;
     const evidence9: string[] = [];
 
-    if (overallCorrectness >= 70) { objScore += 0.5; evidence9.push(`نسبة صحة إجمالية ${overallCorrectness}% — تم تحقيق أهداف التعلم بشكل كبير`); }
-    else if (overallCorrectness >= 50) { evidence9.push(`نسبة صحة إجمالية ${overallCorrectness}% — تم تحقيقها جزئياً`); }
-    else { objScore -= 0.5; evidence9.push(`نسبة صحة إجمالية ${overallCorrectness}% — لم تتحقق الأهداف بشكل كافٍ`); }
+    if (overallCorrectness >= 70) { objScore += 0.5; evidence9.push(`نسبة الإجابات الصحيحة ${overallCorrectness}% — تم تحقيق أهداف التعلم بشكل كبير`); }
+    else if (overallCorrectness >= 50) { evidence9.push(`نسبة الإجابات الصحيحة ${overallCorrectness}% — تم تحقيقها جزئياً`); }
+    else { objScore -= 0.5; evidence9.push(`نسبة الإجابات الصحيحة ${overallCorrectness}% — لم تتحقق الأهداف بشكل كافٍ`); }
 
     if (sessionCompletedPercent >= 80) { objScore += 0.5; evidence9.push(`إكمال الحصة ${sessionCompletedPercent}% — معظم الطلاب بقوا متفاعلين`); }
     else if (sessionCompletedPercent < 60) { objScore -= 0.5; evidence9.push(`فقط ${sessionCompletedPercent}% إكمال الحصة — كثير من الطلاب فقدوا التفاعل`); }
@@ -652,9 +653,9 @@ export class DatabaseStorage implements IStorage {
 
     const exitTicketCorrectness = exitTicketInstance?.overallCorrectness?.percent;
     if (exitTicketCorrectness != null) {
-      if (exitTicketCorrectness >= 70) { objScore += 0.5; evidence9.push(`صحة تذكرة الخروج ${exitTicketCorrectness}% — تقييم نهائي قوي`); }
-      else if (exitTicketCorrectness >= 50) { evidence9.push(`صحة تذكرة الخروج ${exitTicketCorrectness}%`); }
-      else { objScore -= 0.5; evidence9.push(`صحة تذكرة الخروج ${exitTicketCorrectness}% فقط — لم تتثبت الأهداف بنهاية الحصة`); }
+      if (exitTicketCorrectness >= 70) { objScore += 0.5; evidence9.push(`صحة اختبار الفهم النهائي ${exitTicketCorrectness}% — تقييم نهائي قوي`); }
+      else if (exitTicketCorrectness >= 50) { evidence9.push(`صحة اختبار الفهم النهائي ${exitTicketCorrectness}%`); }
+      else { objScore -= 0.5; evidence9.push(`صحة اختبار الفهم النهائي ${exitTicketCorrectness}% فقط — لم تتثبت الأهداف بنهاية الحصة`); }
     }
 
     objScore = Math.max(1, Math.min(5, Math.round(objScore * 2) / 2));
@@ -666,9 +667,9 @@ export class DatabaseStorage implements IStorage {
       evidence: evidence9,
       recommendations: objScore < 4 ? [
         overallCorrectness < 60 ? "راجع الأهداف التي لم تتحقق وخطط للمعالجة في الحصة القادمة" : "",
-        exitTicketCorrectness != null && exitTicketCorrectness < 60 ? "استخدم نتائج تذكرة الخروج للتخطيط للمراجعة في بداية الحصة القادمة" : "",
+        exitTicketCorrectness != null && exitTicketCorrectness < 60 ? "استخدم نتائج اختبار الفهم النهائي للتخطيط للمراجعة في بداية الحصة القادمة" : "",
       ].filter(Boolean) : ["تم تحقيق أهداف التعلم بنجاح"],
-      notes: `الصحة: ${overallCorrectness}%، الإكمال: ${sessionCompletedPercent}%، تذكرة الخروج: ${exitTicketCorrectness ?? 'غ/م'}%`,
+      notes: `الصحة: ${overallCorrectness}%، الإكمال: ${sessionCompletedPercent}%، اختبار الفهم النهائي: ${exitTicketCorrectness ?? 'غ/م'}%`,
     });
 
     const overallAvg = Math.round(criteria.reduce((s: number, c: any) => s + c.score, 0) / criteria.length * 10) / 10;
@@ -721,7 +722,7 @@ export class DatabaseStorage implements IStorage {
 
       const typeLabel = actType === 'SECTION_CHECK' ? 'اختبارات الفهم'
         : actType === 'TEAM_EXERCISE' ? 'تمرين جماعي'
-        : 'تذكرة الخروج';
+        : 'اختبار الفهم النهائي';
 
       if (actType === 'SECTION_CHECK' && instances.length > 0) {
         const combined = this.combineSectionChecks(instances, totalStudents);
@@ -791,7 +792,7 @@ export class DatabaseStorage implements IStorage {
     }
 
     if (avgCorrectness < 50) {
-      insights.push(`متوسط الصحة عبر جميع اختبارات الفهم منخفض عند ${avgCorrectness}% — قد يحتاج المحتوى لأسلوب مختلف.`);
+      insights.push(`نسبة الإجابات الصحيحة عبر جميع اختبارات الفهم منخفضة عند ${avgCorrectness}% — قد يحتاج المحتوى لأسلوب مختلف.`);
     }
 
     return {
@@ -910,7 +911,7 @@ export class DatabaseStorage implements IStorage {
     const overallInsights: string[] = [];
 
     if (act.activityType === 'EXIT_TICKET' && teacherTalkDuring) {
-      overallInsights.push(`كان المعلم يتحدث لمدة ${teacherTalkOverlapMin} د أثناء تذكرة الخروج، يناقش: ${teacherTalkTopics}. يجب إكمال تذكرة الخروج بشكل مستقل لقياس الفهم بدقة.`);
+      overallInsights.push(`كان المعلم يتحدث لمدة ${teacherTalkOverlapMin} د أثناء اختبار الفهم النهائي، يناقش: ${teacherTalkTopics}. يجب إكمال اختبار الفهم النهائي بشكل مستقل لقياس الفهم بدقة.`);
     }
 
     const overallPercent = act.correctness?.percent ?? 0;
@@ -955,7 +956,7 @@ export class DatabaseStorage implements IStorage {
 
     const highCorrectQs = questions.filter(q => q.percent >= 80);
     if (highCorrectQs.length > 0 && teacherTalkDuring && act.activityType === 'EXIT_TICKET') {
-      overallInsights.push(`${highCorrectQs.length} سؤال حققوا نسبة صحة عالية (80%+)، ومع ذلك كان المعلم لا يزال يتحدث أثناء تذكرة الخروج.`);
+      overallInsights.push(`${highCorrectQs.length} سؤال حققوا نسبة صحة عالية (80%+)، ومع ذلك كان المعلم لا يزال يتحدث أثناء اختبار الفهم النهائي.`);
     }
 
     return {
@@ -1048,7 +1049,7 @@ export class DatabaseStorage implements IStorage {
 
       const typeNameAr: Record<string, string> = {
         SECTION_CHECK: "اختبار الفهم",
-        EXIT_TICKET: "تذكرة الخروج",
+        EXIT_TICKET: "اختبار الفهم النهائي",
         TEAM_EXERCISE: "تمرين جماعي",
       };
       const actLabel = `${typeNameAr[act.activityType] || act.activityType} (${correctPercent}% صحة)`;

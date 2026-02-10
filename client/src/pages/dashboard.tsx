@@ -484,7 +484,7 @@ function formatLevel(level: string): string {
 function formatActivityType(type: string): string {
   const map: Record<string, string> = {
     SECTION_CHECK: "اختبار الفهم",
-    EXIT_TICKET: "تذكرة الخروج",
+    EXIT_TICKET: "اختبار الفهم النهائي",
     TEAM_EXERCISE: "تمرين جماعي",
   };
   return map[type] || type;
@@ -516,13 +516,13 @@ function CombinedSectionCheckBlock({ combined, prefix }: { combined: CombinedAna
           />
           <MetricTile
             icon={<Users className="h-3.5 w-3.5" />}
-            label="متوسط الطلاب المجيبين"
+            label="عدد الطلاب الذين أجابوا"
             value={`${combined.avgStudentsAnswered} / ${combined.totalStudents}`}
             testId={`${prefix}-metric-students`}
           />
           <MetricTile
             icon={<CheckCircle className="h-3.5 w-3.5" />}
-            label="متوسط الصحة"
+            label="نسبة الإجابات الصحيحة"
             value={`${combined.avgCorrectness}%`}
             testId={`${prefix}-metric-correctness`}
           />
@@ -560,13 +560,13 @@ function SingleActivityBlock({ instance: inst, prefix }: { instance: ActivityIns
           />
           <MetricTile
             icon={<Users className="h-3.5 w-3.5" />}
-            label="الطلاب المجيبين"
+            label="عدد الطلاب الذين أجابوا"
             value={`${inst.studentsWhoAnswered} / ${inst.totalStudents}`}
             testId={`${prefix}-metric-students`}
           />
           <MetricTile
             icon={<CheckCircle className="h-3.5 w-3.5" />}
-            label="نسبة الصحة الإجمالية"
+            label="نسبة الإجابات الصحيحة"
             value={`${inst.overallCorrectness?.percent ?? 0}%`}
             testId={`${prefix}-metric-correctness`}
           />
@@ -585,7 +585,7 @@ function SingleActivityBlock({ instance: inst, prefix }: { instance: ActivityIns
           <div className="flex gap-3 p-3 rounded-md bg-destructive/10 border border-destructive/20" data-testid={`${prefix}-teacher-talk-warning`}>
             <AlertTriangle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
             <div className="space-y-0.5">
-              <p className="text-sm font-medium text-destructive">كان المعلم يتحدث أثناء تذكرة الخروج</p>
+              <p className="text-sm font-medium text-destructive">كان المعلم يتحدث أثناء اختبار الفهم النهائي</p>
               <p className="text-xs text-muted-foreground">
                 تحدث لمدة {inst.teacherTalkOverlapMin} د حول: {inst.teacherTalkTopics}. يجب أن يجيب الطلاب بشكل مستقل.
               </p>
@@ -840,7 +840,7 @@ export default function Dashboard() {
                 />
                 <MetricTile
                   icon={<ThermometerSun className="h-3.5 w-3.5" />}
-                  label="الحرارة"
+                  label="الحرارة والتفاعل"
                   value={`${sessionTemp}%`}
                   testId="metric-temperature"
                 />
@@ -852,7 +852,7 @@ export default function Dashboard() {
                 />
                 <MetricTile
                   icon={<Percent className="h-3.5 w-3.5" />}
-                  label="اكتمال الحصة"
+                  label="إكمال الأسئلة"
                   value={`${studentMetrics.sessionCompletedPercent}%`}
                   sub={`متوسط ${studentMetrics.avgLearningTime} / ${teachingMinutes} د`}
                   testId="metric-session-completed"
