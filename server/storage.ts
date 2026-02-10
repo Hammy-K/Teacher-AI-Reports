@@ -216,7 +216,7 @@ export class DatabaseStorage implements IStorage {
       correctness: activityCorrectness[a.activityId] || null,
     }));
 
-    const feedback = this.generateFeedback(activitiesWithCorrectness, transcripts, pollStats);
+    const feedback = this.generateFeedback(activitiesWithCorrectness, transcripts, chats, session, pollStats);
 
     return {
       session,
@@ -270,6 +270,8 @@ export class DatabaseStorage implements IStorage {
   private generateFeedback(
     activities: any[],
     transcripts: SessionTranscript[],
+    chats: SessionChat[],
+    session: any,
     pollStats: any
   ): { wentWell: any[]; needsImprovement: any[] } {
     const wentWell: any[] = [];
@@ -395,7 +397,185 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
+    this.generatePedagogyFeedback(transcriptTimes, chats, session, wentWell, needsImprovement);
+
     return { wentWell, needsImprovement };
+  }
+
+  private generatePedagogyFeedback(
+    transcriptTimes: { startSec: number | null; endSec: number | null; text: string }[],
+    chats: SessionChat[],
+    session: any,
+    wentWell: any[],
+    needsImprovement: any[]
+  ): void {
+    const GAP_THRESHOLD = 5;
+    const MAX_CONTINUOUS_SEC = 120;
+    const MAX_TOTAL_TALK_MIN = 15;
+
+    const sorted = transcriptTimes
+      .filter(t => t.startSec !== null && t.endSec !== null)
+      .sort((a, b) => a.startSec! - b.startSec!);
+
+    if (sorted.length === 0) return;
+
+    const continuousSegments: { startSec: number; endSec: number; durationSec: number }[] = [];
+    let segStart = sorted[0].startSec!;
+    let segEnd = sorted[0].endSec!;
+
+    for (let i = 1; i < sorted.length; i++) {
+      const gap = sorted[i].startSec! - segEnd;
+      if (gap <= GAP_THRESHOLD) {
+        segEnd = Math.max(segEnd, sorted[i].endSec!);
+      } else {
+        continuousSegments.push({ startSec: segStart, endSec: segEnd, durationSec: segEnd - segStart });
+        segStart = sorted[i].startSec!;
+        segEnd = sorted[i].endSec!;
+      }
+    }
+    continuousSegments.push({ startSec: segStart, endSec: segEnd, durationSec: segEnd - segStart });
+
+    let totalTeacherTalkSec = 0;
+    for (const t of sorted) {
+      totalTeacherTalkSec += (t.endSec! - t.startSec!);
+    }
+    const totalTeacherTalkMin = Math.round(totalTeacherTalkSec / 60 * 10) / 10;
+
+    const longSegments = continuousSegments.filter(s => s.durationSec > MAX_CONTINUOUS_SEC);
+
+    const formatTime = (sec: number) => {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    };
+
+    if (longSegments.length === 0) {
+      wentWell.push({
+        category: "pedagogy",
+        activity: "Continuous Talk",
+        detail: `Teacher kept all talk segments under 2 minutes — good pacing that allows students to stay engaged. Longest continuous segment was ${Math.round(Math.max(...continuousSegments.map(s => s.durationSec)))}s.`,
+      });
+    } else {
+      const longestSeg = longSegments.reduce((a, b) => a.durationSec > b.durationSec ? a : b);
+      const longestMin = Math.round(longestSeg.durationSec / 60 * 10) / 10;
+      needsImprovement.push({
+        category: "pedagogy",
+        activity: "Continuous Talk",
+        detail: `Teacher had ${longSegments.length} stretch${longSegments.length > 1 ? 'es' : ''} of non-stop talking exceeding 2 minutes. The longest was ${longestMin} min (${formatTime(longestSeg.startSec)}–${formatTime(longestSeg.endSec)}). Break up long stretches with questions or student interaction.`,
+        recommended: "Under 2 min per stretch",
+        actual: `${longestMin} min longest stretch`,
+      });
+    }
+
+    const sessionDurationMin = session?.sessionTime || session?.teachingTime || 55;
+
+    if (totalTeacherTalkMin <= MAX_TOTAL_TALK_MIN) {
+      wentWell.push({
+        category: "pedagogy",
+        activity: "Total Teacher Talk",
+        detail: `Total teacher talk time was ${totalTeacherTalkMin} min out of ${sessionDurationMin} min session — within the recommended limit of 15 minutes. This leaves ample time for student activities.`,
+      });
+    } else {
+      needsImprovement.push({
+        category: "pedagogy",
+        activity: "Total Teacher Talk",
+        detail: `Total teacher talk time was ${totalTeacherTalkMin} min out of ${sessionDurationMin} min session. Ideally, teacher talk should be under 15 minutes to allow the majority of the session for student active learning.`,
+        recommended: "Under 15 min",
+        actual: `${totalTeacherTalkMin} min`,
+      });
+    }
+
+    const studentActiveMin = Math.round((sessionDurationMin - totalTeacherTalkMin) * 10) / 10;
+    const studentActivePercent = Math.round((studentActiveMin / sessionDurationMin) * 100);
+
+    if (studentActivePercent > 50) {
+      wentWell.push({
+        category: "pedagogy",
+        activity: "Student Active Time",
+        detail: `Students had ${studentActiveMin} min (${studentActivePercent}%) of active time vs ${totalTeacherTalkMin} min teacher talk — the majority of the session was student-centered.`,
+      });
+    } else {
+      needsImprovement.push({
+        category: "pedagogy",
+        activity: "Student Active Time",
+        detail: `Students only had ${studentActiveMin} min (${studentActivePercent}%) of active time. Teacher talk (${totalTeacherTalkMin} min) took up most of the session. The majority of session time should be student active time.`,
+        recommended: "Over 50% student time",
+        actual: `${studentActivePercent}% student time`,
+      });
+    }
+
+    const studentChats = chats.filter(c => c.userType === 'STUDENT');
+    const chatTimestamps = studentChats
+      .map(c => this.parseTimeToSeconds(c.createdAtTs || ''))
+      .filter((t): t is number => t !== null)
+      .sort((a, b) => a - b);
+
+    if (chatTimestamps.length === 0) {
+      needsImprovement.push({
+        category: "pedagogy",
+        activity: "Chat Engagement",
+        detail: `No student chat messages were recorded during the session. Teachers should prompt students to respond in chat to check understanding and maintain engagement.`,
+      });
+      return;
+    }
+
+    const chatBursts: { startSec: number; endSec: number; count: number }[] = [];
+    const BURST_WINDOW = 30;
+
+    let burstStart = chatTimestamps[0];
+    let burstCount = 1;
+    let lastTs = chatTimestamps[0];
+
+    for (let i = 1; i < chatTimestamps.length; i++) {
+      if (chatTimestamps[i] - lastTs <= BURST_WINDOW) {
+        burstCount++;
+        lastTs = chatTimestamps[i];
+      } else {
+        if (burstCount >= 3) {
+          chatBursts.push({ startSec: burstStart, endSec: lastTs, count: burstCount });
+        }
+        burstStart = chatTimestamps[i];
+        burstCount = 1;
+        lastTs = chatTimestamps[i];
+      }
+    }
+    if (burstCount >= 3) {
+      chatBursts.push({ startSec: burstStart, endSec: lastTs, count: burstCount });
+    }
+
+    const burstsOverlappingTalk = chatBursts.filter(burst => {
+      return continuousSegments.some(seg => {
+        return burst.startSec <= seg.endSec + 10 && burst.endSec >= seg.startSec - 10;
+      });
+    });
+
+    const totalBursts = chatBursts.length;
+    const engagedBursts = burstsOverlappingTalk.length;
+
+    if (engagedBursts >= 3) {
+      wentWell.push({
+        category: "pedagogy",
+        activity: "Chat Engagement",
+        detail: `Students responded in chat ${engagedBursts} times during or right after teacher talk (${studentChats.length} total messages from ${new Set(studentChats.map(c => c.creatorId)).size} students). This indicates the teacher actively elicited responses and checked understanding.`,
+      });
+    } else if (engagedBursts >= 1) {
+      needsImprovement.push({
+        category: "pedagogy",
+        activity: "Chat Engagement",
+        detail: `Only ${engagedBursts} chat engagement burst${engagedBursts > 1 ? 's' : ''} detected during teacher talk segments. With ${studentChats.length} total student messages, the teacher could do more to elicit responses — ask students to type answers in chat after each explanation.`,
+        recommended: "3+ engagement prompts per session",
+        actual: `${engagedBursts} engagement bursts`,
+      });
+    } else {
+      needsImprovement.push({
+        category: "pedagogy",
+        activity: "Chat Engagement",
+        detail: `While ${studentChats.length} student chat messages were sent, none appeared to be direct responses to teacher prompts. The teacher should ask students to respond in chat to check for understanding during lessons.`,
+        recommended: "Regular chat check-ins",
+        actual: "No prompted engagement detected",
+      });
+    }
   }
 
   async insertCourseSession(data: InsertCourseSession): Promise<CourseSession> {

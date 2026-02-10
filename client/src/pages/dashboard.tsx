@@ -273,7 +273,7 @@ export default function Dashboard() {
                     <div key={idx} className="space-y-1" data-testid={`feedback-well-${idx}`}>
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline" data-testid={`badge-well-activity-${idx}`}>{item.activity}</Badge>
-                        <Badge variant="secondary">{item.category === "time_management" ? "Time Management" : "Teaching Method"}</Badge>
+                        <Badge variant="secondary">{item.category === "time_management" ? "Time Management" : item.category === "pedagogy" ? "Pedagogy" : "Teaching Method"}</Badge>
                       </div>
                       <p className="text-sm text-muted-foreground" data-testid={`text-well-detail-${idx}`}>{item.detail}</p>
                     </div>
@@ -299,7 +299,7 @@ export default function Dashboard() {
                     <div key={idx} className="space-y-1" data-testid={`feedback-improve-${idx}`}>
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline" data-testid={`badge-improve-activity-${idx}`}>{item.activity}</Badge>
-                        <Badge variant="secondary">{item.category === "time_management" ? "Time Management" : "Teaching Method"}</Badge>
+                        <Badge variant="secondary">{item.category === "time_management" ? "Time Management" : item.category === "pedagogy" ? "Pedagogy" : "Teaching Method"}</Badge>
                       </div>
                       <p className="text-sm text-muted-foreground" data-testid={`text-improve-detail-${idx}`}>{item.detail}</p>
                       {item.recommended && (
