@@ -463,6 +463,24 @@ function formatCategory(cat: string): string {
   return cat;
 }
 
+function formatLevel(level: string): string {
+  const map: Record<string, string> = {
+    L1: "الأول",
+    L2: "الثاني",
+    L3: "الثالث",
+    L4: "الرابع",
+    L5: "الخامس",
+    L6: "السادس",
+    L7: "السابع",
+    L8: "الثامن",
+    L9: "التاسع",
+    L10: "العاشر",
+    L11: "الحادي عشر",
+    L12: "الثاني عشر",
+  };
+  return map[level] || level;
+}
+
 function formatActivityType(type: string): string {
   const map: Record<string, string> = {
     SECTION_CHECK: "اختبار الفهم",
@@ -790,7 +808,7 @@ export default function Dashboard() {
             </div>
             <div data-testid="text-level">
               <span className="text-muted-foreground">المستوى:</span>{" "}
-              <span className="font-medium">{session.level || 'غير محدد'}</span>
+              <span className="font-medium">{formatLevel(session.level) || 'غير محدد'}</span>
             </div>
             <div data-testid="text-topic">
               <span className="text-muted-foreground">الموضوع:</span>{" "}
@@ -816,7 +834,7 @@ export default function Dashboard() {
                 />
                 <MetricTile
                   icon={<CheckCircle className="h-3.5 w-3.5" />}
-                  label="نسبة الصحة"
+                  label="نسبة الإجابات الصحيحة"
                   value={`${pollStats.correctnessPercent}%`}
                   testId="metric-correctness"
                 />
@@ -860,7 +878,7 @@ export default function Dashboard() {
                       <th className="pb-3 pl-4 text-right font-medium text-muted-foreground">نوع النشاط</th>
                       <th className="pb-3 pl-4 text-right font-medium text-muted-foreground">المكتملة</th>
                       <th className="pb-3 pl-4 text-left font-medium text-muted-foreground">المدة</th>
-                      <th className="pb-3 text-left font-medium text-muted-foreground">نسبة الصحة</th>
+                      <th className="pb-3 text-left font-medium text-muted-foreground">نسبة الإجابات الصحيحة</th>
                     </tr>
                   </thead>
                   <tbody>
