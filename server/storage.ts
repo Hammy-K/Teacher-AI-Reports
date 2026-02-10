@@ -201,7 +201,7 @@ export class DatabaseStorage implements IStorage {
 
     const teacherRecord = students.find((s: any) => s.userType === 'TEACHER');
     let teacherName = teacherRecord?.userName || 'معلم غير معروف';
-    teacherName = teacherName.replace(/أ\.(?!\s)/g, 'أ. ').replace(/\bال\s+/g, 'آل ').trim();
+    teacherName = teacherName.replace(/أ\.(?!\s)/g, 'أ. ').replace(/\s+ال\s+/g, ' آل ').trim();
     const { topic, level } = this.parseSessionNameParts(session?.courseSessionName || '');
 
     const studentOnly = students.filter(s => s.userType === 'STUDENT');
@@ -782,7 +782,7 @@ export class DatabaseStorage implements IStorage {
       ? Math.round(instances.reduce((s, i) => s + (i.studentsWhoAnswered / totalStudents * 100), 0) / count)
       : 0;
     if (avgCompletionRate < 80) {
-      insights.push(`متوسط معدل الإكمال كان ${avgCompletionRate}% — بعض الطلاب قد لم يكن لديهم وقت كافٍ.`);
+      insights.push(`متوسط إكمال أسئلة اختبار الفهم وصل ${avgCompletionRate}% — مما يشير إلى ضيق الوقت لدى بعض الطلاب.`);
     }
 
     const teacherTalkInstances = instances.filter(i => i.teacherTalkDuring);
@@ -792,7 +792,7 @@ export class DatabaseStorage implements IStorage {
     }
 
     if (avgCorrectness < 50) {
-      insights.push(`نسبة الإجابات الصحيحة عبر جميع اختبارات الفهم منخفضة عند ${avgCorrectness}% — قد يحتاج المحتوى لأسلوب مختلف.`);
+      insights.push(`نسبة الإجابات الصحيحة عبر جميع اختبارات الفهم منخفضة عند ${avgCorrectness}% — قد يحتاج المحتوى أو أسلوب الشرح لمراجعة.`);
     }
 
     return {
