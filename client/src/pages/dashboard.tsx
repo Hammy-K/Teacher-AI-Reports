@@ -7,7 +7,8 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/component
 import {
   Users, Clock, ThermometerSun, CheckCircle, BarChart3, Percent,
   ThumbsUp, AlertTriangle, BookOpen, ClipboardCheck, ChevronDown, ChevronRight,
-  ListChecks, UsersRound, Target, Timer, Lightbulb, MessageSquare, GraduationCap
+  ListChecks, UsersRound, Target, Timer, Lightbulb, MessageSquare, GraduationCap,
+  ShieldCheck, Star, ArrowRight
 } from "lucide-react";
 
 interface ActivityCorrectness {
@@ -124,6 +125,164 @@ interface DashboardData {
     needsImprovement: FeedbackItem[];
   };
   activityAnalyses: ActivityAnalysis[];
+  qaEvaluation: {
+    criteria: {
+      id: number;
+      nameAr: string;
+      nameEn: string;
+      score: number;
+      evidence: string[];
+      recommendations: string[];
+      notes: string;
+    }[];
+    overallScore: number;
+    summary: {
+      totalStudents: number;
+      totalQuestions: number;
+      overallCorrectness: number;
+      responseRate: number;
+      sessionTemperature: number;
+      teachingTimeMin: number;
+      teacherTalkMin: number;
+      studentActivePercent: number;
+      activitiesCompleted: string;
+      chatParticipation: string;
+    };
+  };
+}
+
+function ScoreStars({ score }: { score: number }) {
+  const fullStars = Math.floor(score);
+  const hasHalf = score % 1 >= 0.5;
+  return (
+    <div className="flex items-center gap-0.5" data-testid="score-stars">
+      {Array.from({ length: 5 }, (_, i) => (
+        <Star
+          key={i}
+          className={`h-4 w-4 ${
+            i < fullStars
+              ? "fill-amber-500 text-amber-500 dark:fill-amber-400 dark:text-amber-400"
+              : i === fullStars && hasHalf
+              ? "fill-amber-500/50 text-amber-500 dark:fill-amber-400/50 dark:text-amber-400"
+              : "text-muted-foreground/30"
+          }`}
+        />
+      ))}
+      <span className="ml-1.5 text-sm font-semibold tabular-nums">{score}/5</span>
+    </div>
+  );
+}
+
+function ScoreBadge({ score }: { score: number }) {
+  const color = score >= 4
+    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+    : score >= 3
+    ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+    : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
+  const label = score >= 4 ? "Strong" : score >= 3 ? "Acceptable" : "Needs Work";
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${color}`} data-testid="score-badge">
+      {label}
+    </span>
+  );
+}
+
+function QAEvaluationSection({ evaluation }: { evaluation: DashboardData["qaEvaluation"] }) {
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  return (
+    <div className="space-y-3" data-testid="section-qa-evaluation">
+      <SectionHeading
+        icon={<ShieldCheck className="h-4 w-4" />}
+        title="Session Quality Evaluation"
+        badge={`${evaluation.overallScore}/5`}
+        testId="heading-qa-evaluation"
+      />
+
+      <Card data-testid="card-qa-summary">
+        <CardContent className="pt-6">
+          <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-8 mb-5">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center h-12 w-12 rounded-md bg-primary/10 dark:bg-primary/20 text-primary">
+                <ShieldCheck className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Overall Score</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl font-bold tabular-nums" data-testid="text-overall-score">{evaluation.overallScore}</span>
+                  <span className="text-lg text-muted-foreground">/5</span>
+                  <ScoreBadge score={evaluation.overallScore} />
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2 text-sm flex-1">
+              <div><span className="text-muted-foreground">Questions:</span> <span className="font-medium">{evaluation.summary.totalQuestions}</span></div>
+              <div><span className="text-muted-foreground">Response Rate:</span> <span className="font-medium">{evaluation.summary.responseRate}%</span></div>
+              <div><span className="text-muted-foreground">Teacher Talk:</span> <span className="font-medium">{evaluation.summary.teacherTalkMin} min</span></div>
+              <div><span className="text-muted-foreground">Student Active:</span> <span className="font-medium">{evaluation.summary.studentActivePercent}%</span></div>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            {evaluation.criteria.map((criterion) => (
+              <Collapsible
+                key={criterion.id}
+                open={expandedId === criterion.id}
+                onOpenChange={(open) => setExpandedId(open ? criterion.id : null)}
+              >
+                <CollapsibleTrigger
+                  className="flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-md hover-elevate"
+                  data-testid={`qa-criterion-${criterion.id}`}
+                >
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    {expandedId === criterion.id ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+                    <span className="text-sm font-medium tabular-nums text-muted-foreground w-5">{criterion.id}.</span>
+                    <div className="flex flex-col md:flex-row md:items-center gap-0.5 md:gap-2 min-w-0">
+                      <span className="text-sm font-medium truncate">{criterion.nameEn}</span>
+                      <span className="text-xs text-muted-foreground truncate">{criterion.nameAr}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <ScoreBadge score={criterion.score} />
+                    <ScoreStars score={criterion.score} />
+                  </div>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="ml-9 mr-3 mb-3 mt-1 space-y-3 rounded-md border p-3" data-testid={`qa-detail-${criterion.id}`}>
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Evidence</p>
+                      <ul className="space-y-1">
+                        {criterion.evidence.map((e, i) => (
+                          <li key={i} className="flex gap-2 text-sm">
+                            <span className="flex-shrink-0 mt-1.5 h-1.5 w-1.5 rounded-full bg-primary/50" />
+                            <span>{e}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    {criterion.recommendations.length > 0 && (
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Recommendations</p>
+                        <ul className="space-y-1">
+                          {criterion.recommendations.map((r, i) => (
+                            <li key={i} className="flex gap-2 text-sm">
+                              <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-primary" />
+                              <span>{r}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground border-t pt-2">{criterion.notes}</p>
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 function CorrectnessBar({ percent }: { percent: number }) {
@@ -548,7 +707,7 @@ export default function Dashboard() {
 
   if (!data) return null;
 
-  const { session, activities, pollStats, studentMetrics, feedback, activityAnalyses } = data;
+  const { session, activities, pollStats, studentMetrics, feedback, activityAnalyses, qaEvaluation } = data;
 
   const teachingMinutes = Math.round(session.teachingTime || 0);
   const sessionTemp = session.sessionTemperature ?? studentMetrics.sessionTemperature ?? 0;
@@ -746,6 +905,10 @@ export default function Dashboard() {
             title="Time Management"
             icon={<Clock className="h-4 w-4" />}
           />
+        )}
+
+        {qaEvaluation && (
+          <QAEvaluationSection evaluation={qaEvaluation} />
         )}
 
         <PedagogySection

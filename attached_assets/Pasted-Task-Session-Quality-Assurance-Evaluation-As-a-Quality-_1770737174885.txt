@@ -1,0 +1,33 @@
+Task: Session Quality Assurance Evaluation
+As a Quality Assurance expert, your primary task is to evaluate a hybrid Qudurat preparation session delivered to Saudi students.
+
+Session Context:
+The session is conducted remotely by a tutor while approximately 200 students are spread across about 10 physical classrooms (around 20 students per class). Students attend using tablets, with a facilitator present in each classroom. The tutor uses a whiteboard for annotations and lesson slides for instruction. Students are seated individually or in groups.
+
+Evaluation Focus:
+Analyze the instructor's performance by reviewing the session transcript and accompanying Excel documents detailing student participation (via polls, activities, reactions, and chats).
+
+Methodology and Criteria:
+The evaluation requires a balanced, fair, yet firm application of the rubric criteria. The interpretation must accurately reflect significant positive aspects while also identifying and detailing weaknesses that could lower the overall score. Specific attention must be paid to:
+Content Depth: The thoroughness and quality of the subject matter covered.
+Student interaction: numbers and percentage of students who interacted with questions, chats, participated in discussions, and correctness rates
+Explanation Flow Management: The clarity, structure, and pacing of the instruction.
+Content depth vs session time: are the topics presented in a timely manner tht allow students to retain the information, any adjustments needed to improve learning outcomes. 
+
+Focus on Criteria: The analysis must include the following points, in the order specified in the attached AI EXP standard use the explanation provided on this document for each point to analyze its objective. 
+1.  إتقان المحتوى والشرح  Instructional and content mastery
+2. دعم الطلاب وتحفيزهم Student engagement ( to what extent are ss engaged)
+3. التواصل وحضور المعلّم  Tutor communication
+4. إدارة الوقت والخطة التعليمية  Time management 
+5. الإلتزام بتصميم وخطة الدرس وتوزيع الوقت  Session pacing
+6.  الاخطاء و تأثيرها على الدرس  Highlight mistakes 
+7. لحظات تميّز من الأستاذ  Distinct moments by the teacher
+8. التقييم العام والجودة للحصة والمدرس Overall tutor rating and session effectiveness
+9. قياس مدى تحقيق أهداف الحصة  Session objectives achieved
+5. Formatting the Results: Present the results by highlighting the session name/number, number of students attending, topic or lesson title, number of questions, number of students who interacted and answered each question, then in a table present findings that follows the structure of the evaluation standard (the Rubric), including the following columns for each criterion:
+Item.
+Score/Grade (out of 5).
+Evidence/Justification with time stamps.
+Actionable Recommendations.
+Notes.
+include a summary of findings that highlights total number of students, how many questions were introduced and the type of questions, summary of tutor performance and areas that need to improve before highlighting findings in the table
