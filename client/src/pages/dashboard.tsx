@@ -3,13 +3,22 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Users, Clock, ThermometerSun, CheckCircle, BarChart3, Percent
+  Users, Clock, ThermometerSun, CheckCircle, BarChart3, Percent,
+  ThumbsUp, AlertTriangle
 } from "lucide-react";
 
 interface ActivityCorrectness {
   answered: number;
   correct: number;
   percent: number;
+}
+
+interface FeedbackItem {
+  category: string;
+  activity: string;
+  detail: string;
+  recommended?: string;
+  actual?: string;
 }
 
 interface DashboardData {
@@ -43,6 +52,10 @@ interface DashboardData {
     sessionCompletedPercent: number;
     avgLearningTime: number;
     teachingTime: number;
+  };
+  feedback: {
+    wentWell: FeedbackItem[];
+    needsImprovement: FeedbackItem[];
   };
 }
 
@@ -82,7 +95,7 @@ export default function Dashboard() {
 
   if (!data) return null;
 
-  const { session, activities, pollStats, studentMetrics } = data;
+  const { session, activities, pollStats, studentMetrics, feedback } = data;
 
   const teachingMinutes = Math.round(session.teachingTime || 0);
   const sessionTemp = session.sessionTemperature ?? studentMetrics.sessionTemperature ?? 0;
@@ -243,6 +256,68 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+          <Card data-testid="card-went-well">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <ThumbsUp className="h-5 w-5 text-green-600 dark:text-green-400" />
+                What Went Well
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {feedback.wentWell.length > 0 ? (
+                <div className="space-y-4">
+                  {feedback.wentWell.map((item, idx) => (
+                    <div key={idx} className="space-y-1" data-testid={`feedback-well-${idx}`}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" data-testid={`badge-well-activity-${idx}`}>{item.activity}</Badge>
+                        <Badge variant="secondary">{item.category === "time_management" ? "Time Management" : "Teaching Method"}</Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground" data-testid={`text-well-detail-${idx}`}>{item.detail}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No positive feedback items identified.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-needs-improvement">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                What Needs Improvement
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {feedback.needsImprovement.length > 0 ? (
+                <div className="space-y-4">
+                  {feedback.needsImprovement.map((item, idx) => (
+                    <div key={idx} className="space-y-1" data-testid={`feedback-improve-${idx}`}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" data-testid={`badge-improve-activity-${idx}`}>{item.activity}</Badge>
+                        <Badge variant="secondary">{item.category === "time_management" ? "Time Management" : "Teaching Method"}</Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground" data-testid={`text-improve-detail-${idx}`}>{item.detail}</p>
+                      {item.recommended && (
+                        <div className="flex items-center gap-4 text-xs mt-1">
+                          <span className="text-muted-foreground">Recommended: <span className="font-medium text-foreground">{item.recommended}</span></span>
+                          <span className="text-muted-foreground">Actual: <span className="font-medium text-foreground">{item.actual}</span></span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No improvement areas identified.</p>
+              )}
+            </CardContent>
+          </Card>
+
+        </div>
 
       </div>
     </div>

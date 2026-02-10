@@ -71,16 +71,19 @@ export async function importAllData() {
   }
   console.log("Imported course sessions");
 
-  const transcriptRows = readCsv("namra_transcript_70712_1770635480918.csv");
-  const transcripts: InsertSessionTranscript[] = transcriptRows.map((row: any, i: number) => ({
+  const transcriptPath = path.join(process.cwd(), "attached_assets", "namra_transcript_70712_1770635480918.csv");
+  let transcriptContent = fs.readFileSync(transcriptPath, "utf-8");
+  if (transcriptContent.charCodeAt(0) === 0xFEFF) transcriptContent = transcriptContent.slice(1);
+  const transcriptParsed = parse(transcriptContent, { columns: false, skip_empty_lines: true, relax_column_count: true });
+  const transcripts: InsertSessionTranscript[] = transcriptParsed.map((cols: string[], i: number) => ({
     courseSessionId: 70712,
-    startTime: row.start_time || '',
-    endTime: row.end_time || '',
-    text: row.text || '',
+    startTime: (cols[0] || '').trim(),
+    endTime: (cols[1] || '').trim(),
+    text: (cols.slice(2).join(',') || '').trim(),
     lineOrder: i + 1,
   }));
   await storage.insertTranscripts(transcripts);
-  console.log("Imported transcripts");
+  console.log(`Imported ${transcripts.length} transcripts`);
 
   const chatRows = readCsv("chats_70712_1770635480919.csv");
   const chats: InsertSessionChat[] = chatRows.map((row: any) => ({

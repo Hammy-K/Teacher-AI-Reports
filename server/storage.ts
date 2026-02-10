@@ -216,6 +216,8 @@ export class DatabaseStorage implements IStorage {
       correctness: activityCorrectness[a.activityId] || null,
     }));
 
+    const feedback = this.generateFeedback(activitiesWithCorrectness, transcripts, pollStats);
+
     return {
       session,
       transcripts,
@@ -224,6 +226,7 @@ export class DatabaseStorage implements IStorage {
       pollStats,
       reactionData,
       engagementTimeline,
+      feedback,
       studentMetrics: {
         totalStudents,
         sessionTemperature,
@@ -243,6 +246,156 @@ export class DatabaseStorage implements IStorage {
         handRaises: s.totalHandRaise,
       })).sort((a, b) => (b.activeTime || 0) - (a.activeTime || 0)),
     };
+  }
+
+  private parseTimeToSeconds(timeStr: string): number | null {
+    if (!timeStr) return null;
+    const match24 = timeStr.match(/(\d{4}-\d{2}-\d{2}\s+)?(\d{1,2}):(\d{2}):(\d{2})/);
+    if (match24) {
+      return parseInt(match24[2]) * 3600 + parseInt(match24[3]) * 60 + parseInt(match24[4]);
+    }
+    const match12 = timeStr.match(/(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)/i);
+    if (match12) {
+      let h = parseInt(match12[1]);
+      const m = parseInt(match12[2]);
+      const s = parseInt(match12[3]);
+      const ampm = match12[4].toUpperCase();
+      if (ampm === 'PM' && h !== 12) h += 12;
+      if (ampm === 'AM' && h === 12) h = 0;
+      return h * 3600 + m * 60 + s;
+    }
+    return null;
+  }
+
+  private generateFeedback(
+    activities: any[],
+    transcripts: SessionTranscript[],
+    pollStats: any
+  ): { wentWell: any[]; needsImprovement: any[] } {
+    const wentWell: any[] = [];
+    const needsImprovement: any[] = [];
+
+    const happenedActivities = activities
+      .filter(a => a.activityHappened && a.endTime && a.correctness)
+      .sort((a, b) => (a.endTime || '').localeCompare(b.endTime || ''));
+
+    const transcriptTimes = transcripts.map(t => ({
+      startSec: this.parseTimeToSeconds(t.startTime || ''),
+      endSec: this.parseTimeToSeconds(t.endTime || ''),
+      text: t.text || '',
+    })).filter(t => t.startSec !== null);
+
+    const stagePatterns = /اشرح|اشرحي|تعال|تعالي|يلا.*اشرح|stage|explain.*class|come.*up/i;
+
+    for (let i = 0; i < happenedActivities.length; i++) {
+      const act = happenedActivities[i];
+      const actEndSec = this.parseTimeToSeconds(act.endTime);
+      if (actEndSec === null) continue;
+
+      const correctPercent = act.correctness.percent;
+
+      const nextActivityStartSec = (i + 1 < happenedActivities.length)
+        ? this.parseTimeToSeconds(happenedActivities[i + 1].startTime)
+        : null;
+
+      const postActivityTranscripts = transcriptTimes.filter(t => {
+        if (t.startSec === null) return false;
+        const afterActivity = t.startSec >= actEndSec;
+        const beforeNext = nextActivityStartSec === null || t.startSec < nextActivityStartSec;
+        return afterActivity && beforeNext;
+      });
+
+      let explanationTimeSec = 0;
+      for (const t of postActivityTranscripts) {
+        if (t.startSec !== null && t.endSec !== null) {
+          explanationTimeSec += (t.endSec - t.startSec);
+        }
+      }
+
+      const calledStudentOnStage = postActivityTranscripts.some(t => stagePatterns.test(t.text));
+
+      const actLabel = `${act.activityType} (${correctPercent}% correct)`;
+
+      if (correctPercent > 75) {
+        if (explanationTimeSec <= 15) {
+          wentWell.push({
+            category: "time_management",
+            activity: actLabel,
+            detail: `Teacher spent ${explanationTimeSec}s explaining after this activity — appropriate since ${correctPercent}% of students got it correct. No extra explanation needed.`,
+          });
+        } else {
+          needsImprovement.push({
+            category: "time_management",
+            activity: actLabel,
+            detail: `Teacher spent ${explanationTimeSec}s explaining after this activity, but ${correctPercent}% of students already got it correct. Should spend no more than 10–15 seconds and move on.`,
+            recommended: "10–15 seconds",
+            actual: `${explanationTimeSec} seconds`,
+          });
+        }
+
+        if (calledStudentOnStage) {
+          needsImprovement.push({
+            category: "student_stage",
+            activity: actLabel,
+            detail: `A student was called on stage to explain, but ${correctPercent}% of the class already answered correctly. Calling students on stage is unnecessary when class average is above 75%.`,
+          });
+        } else {
+          wentWell.push({
+            category: "student_stage",
+            activity: actLabel,
+            detail: `Teacher did not call a student on stage — good decision since ${correctPercent}% of students got it correct and no extra explanation was needed.`,
+          });
+        }
+      } else if (correctPercent >= 50) {
+        if (explanationTimeSec >= 30 && explanationTimeSec <= 60) {
+          wentWell.push({
+            category: "time_management",
+            activity: actLabel,
+            detail: `Teacher spent ${explanationTimeSec}s explaining after this activity — appropriate for ${correctPercent}% correctness. The 30–60 second range is ideal here.`,
+          });
+        } else if (explanationTimeSec < 30) {
+          needsImprovement.push({
+            category: "time_management",
+            activity: actLabel,
+            detail: `Teacher spent only ${explanationTimeSec}s explaining after this activity, but ${correctPercent}% correctness suggests 30–60 seconds of explanation would be appropriate.`,
+            recommended: "30–60 seconds",
+            actual: `${explanationTimeSec} seconds`,
+          });
+        } else {
+          needsImprovement.push({
+            category: "time_management",
+            activity: actLabel,
+            detail: `Teacher spent ${explanationTimeSec}s explaining after this activity. With ${correctPercent}% correctness, 30–60 seconds would be sufficient — the extra time could be used elsewhere.`,
+            recommended: "30–60 seconds",
+            actual: `${explanationTimeSec} seconds`,
+          });
+        }
+      } else {
+        if (explanationTimeSec >= 60 && explanationTimeSec <= 120) {
+          wentWell.push({
+            category: "time_management",
+            activity: actLabel,
+            detail: `Teacher spent ${explanationTimeSec}s explaining after this activity — appropriate for low correctness of ${correctPercent}%. Students needed this extra time.`,
+          });
+        } else if (explanationTimeSec < 60) {
+          needsImprovement.push({
+            category: "time_management",
+            activity: actLabel,
+            detail: `Teacher spent only ${explanationTimeSec}s explaining after this activity, but only ${correctPercent}% of students got it correct. Should spend up to 2 minutes to ensure understanding.`,
+            recommended: "60–120 seconds",
+            actual: `${explanationTimeSec} seconds`,
+          });
+        } else {
+          wentWell.push({
+            category: "time_management",
+            activity: actLabel,
+            detail: `Teacher spent ${explanationTimeSec}s explaining after this activity — thorough explanation was appropriate since only ${correctPercent}% of students got it correct.`,
+          });
+        }
+      }
+    }
+
+    return { wentWell, needsImprovement };
   }
 
   async insertCourseSession(data: InsertCourseSession): Promise<CourseSession> {
