@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   Users, Clock, ThermometerSun, CheckCircle, BarChart3, Percent,
-  ThumbsUp, AlertTriangle, BookOpen
+  ThumbsUp, AlertTriangle, BookOpen, ClipboardCheck, ChevronDown, ChevronRight
 } from "lucide-react";
 
 interface ActivityCorrectness {
@@ -20,6 +22,31 @@ interface FeedbackItem {
   recommended?: string;
   actual?: string;
   segments?: string[];
+}
+
+interface ExitTicketQuestion {
+  questionId: string;
+  questionText: string;
+  seen: number;
+  answered: number;
+  correct: number;
+  percent: number;
+}
+
+interface ExitTicketAnalysis {
+  activityId: number;
+  startTime: string;
+  endTime: string;
+  duration: number;
+  plannedDuration: number;
+  totalMcqs: number;
+  totalStudents: number;
+  studentsWhoSaw: number;
+  studentsWhoAnswered: number;
+  overallCorrectness: ActivityCorrectness | null;
+  questions: ExitTicketQuestion[];
+  teacherTalkDuring: boolean;
+  teacherTalkDetails: string;
 }
 
 interface DashboardData {
@@ -58,6 +85,7 @@ interface DashboardData {
     wentWell: FeedbackItem[];
     needsImprovement: FeedbackItem[];
   };
+  exitTicketAnalysis: ExitTicketAnalysis | null;
 }
 
 function FeedbackItemDisplay({ item, idx, prefix }: { item: FeedbackItem; idx: number; prefix: string }) {
@@ -77,6 +105,30 @@ function FeedbackItemDisplay({ item, idx, prefix }: { item: FeedbackItem; idx: n
         </div>
       )}
     </div>
+  );
+}
+
+function SegmentBreakdown({ segments, parentIdx }: { segments: string[]; parentIdx: number }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger
+        className="flex items-center gap-1 text-xs font-medium text-muted-foreground mt-2 hover-elevate rounded-md px-1.5 py-0.5"
+        data-testid={`toggle-segments-${parentIdx}`}
+      >
+        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        Segment breakdown ({segments.length} stretches)
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <ul className="mt-1.5 space-y-1" data-testid={`pedagogy-segments-${parentIdx}`}>
+          {segments.map((seg, sIdx) => (
+            <li key={sIdx} className="text-xs text-muted-foreground pl-3 border-l-2 border-border" data-testid={`pedagogy-segment-${parentIdx}-${sIdx}`}>
+              {seg}
+            </li>
+          ))}
+        </ul>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -116,7 +168,7 @@ export default function Dashboard() {
 
   if (!data) return null;
 
-  const { session, activities, pollStats, studentMetrics, feedback } = data;
+  const { session, activities, pollStats, studentMetrics, feedback, exitTicketAnalysis } = data;
 
   const teachingMinutes = Math.round(session.teachingTime || 0);
   const sessionTemp = session.sessionTemperature ?? studentMetrics.sessionTemperature ?? 0;
@@ -157,6 +209,8 @@ export default function Dashboard() {
   const pedagogyWentWell = feedback.wentWell.filter(i => i.category === "pedagogy");
   const pedagogyNeedsImprovement = feedback.needsImprovement.filter(i => i.category === "pedagogy");
   const allPedagogy = [...pedagogyWentWell.map(i => ({ ...i, type: "positive" as const })), ...pedagogyNeedsImprovement.map(i => ({ ...i, type: "negative" as const }))];
+
+  const et = exitTicketAnalysis;
 
   return (
     <div className="min-h-screen bg-background" data-testid="dashboard-page">
@@ -334,6 +388,85 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
+        {et && (
+          <div className="space-y-4" data-testid="section-exit-ticket">
+            <h2 className="text-xl font-semibold flex items-center gap-2" data-testid="heading-exit-ticket">
+              <ClipboardCheck className="h-5 w-5" />
+              Exit Ticket
+            </h2>
+
+            <Card data-testid="card-exit-ticket">
+              <CardContent className="pt-6 space-y-5">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="space-y-0.5" data-testid="et-metric-questions">
+                    <p className="text-xs text-muted-foreground">Questions</p>
+                    <p className="text-2xl font-bold">{et.totalMcqs}</p>
+                  </div>
+                  <div className="space-y-0.5" data-testid="et-metric-students-answered">
+                    <p className="text-xs text-muted-foreground">Students Answered</p>
+                    <p className="text-2xl font-bold">{et.studentsWhoAnswered}<span className="text-sm font-normal text-muted-foreground"> / {et.totalStudents}</span></p>
+                  </div>
+                  <div className="space-y-0.5" data-testid="et-metric-correctness">
+                    <p className="text-xs text-muted-foreground">Overall Correctness</p>
+                    <p className="text-2xl font-bold">{et.overallCorrectness?.percent ?? 0}%</p>
+                  </div>
+                  <div className="space-y-0.5" data-testid="et-metric-duration">
+                    <p className="text-xs text-muted-foreground">Duration</p>
+                    <p className="text-2xl font-bold">{Math.round(et.duration / 60 * 10) / 10}<span className="text-sm font-normal text-muted-foreground"> min</span></p>
+                    <p className="text-xs text-muted-foreground">Planned: {Math.round(et.plannedDuration / 60 * 10) / 10} min</p>
+                  </div>
+                </div>
+
+                {et.teacherTalkDuring && (
+                  <div className="flex gap-3 p-3 rounded-md bg-destructive/10 border border-destructive/20" data-testid="et-teacher-talk-warning">
+                    <AlertTriangle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium text-destructive">Teacher was talking during Exit Ticket</p>
+                      <p className="text-xs text-muted-foreground" data-testid="et-teacher-talk-detail">{et.teacherTalkDetails}</p>
+                    </div>
+                  </div>
+                )}
+
+                {et.questions.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Question Breakdown</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm" data-testid="table-exit-ticket-questions">
+                        <thead>
+                          <tr className="border-b text-left">
+                            <th className="pb-2 pr-4 font-medium text-muted-foreground">#</th>
+                            <th className="pb-2 pr-4 font-medium text-muted-foreground">Question</th>
+                            <th className="pb-2 pr-4 font-medium text-muted-foreground">Answered</th>
+                            <th className="pb-2 pr-4 font-medium text-muted-foreground">Correct</th>
+                            <th className="pb-2 pr-4 font-medium text-muted-foreground">%</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {et.questions.map((q, qIdx) => (
+                            <tr key={q.questionId} className="border-b last:border-0" data-testid={`row-et-question-${qIdx}`}>
+                              <td className="py-2 pr-4 text-muted-foreground">{qIdx + 1}</td>
+                              <td className="py-2 pr-4 max-w-xs" data-testid={`text-et-question-${qIdx}`}>
+                                <span className="line-clamp-2 text-xs">{q.questionText}</span>
+                              </td>
+                              <td className="py-2 pr-4" data-testid={`text-et-answered-${qIdx}`}>{q.answered}</td>
+                              <td className="py-2 pr-4" data-testid={`text-et-correct-${qIdx}`}>{q.correct}</td>
+                              <td className="py-2 pr-4" data-testid={`text-et-percent-${qIdx}`}>
+                                <Badge variant={q.percent >= 60 ? "default" : "secondary"}>
+                                  {q.percent}%
+                                </Badge>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
         <div className="space-y-4" data-testid="section-pedagogy">
           <h2 className="text-xl font-semibold flex items-center gap-2" data-testid="heading-pedagogy">
             <BookOpen className="h-5 w-5" />
@@ -368,16 +501,7 @@ export default function Dashboard() {
                           </div>
                         )}
                         {item.segments && item.segments.length > 0 && (
-                          <div className="mt-2 space-y-1.5" data-testid={`pedagogy-segments-${idx}`}>
-                            <p className="text-xs font-medium text-muted-foreground">Segment breakdown:</p>
-                            <ul className="space-y-1">
-                              {item.segments.map((seg, sIdx) => (
-                                <li key={sIdx} className="text-xs text-muted-foreground pl-3 border-l-2 border-border" data-testid={`pedagogy-segment-${idx}-${sIdx}`}>
-                                  {seg}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
+                          <SegmentBreakdown segments={item.segments} parentIdx={idx} />
                         )}
                       </div>
                     </li>

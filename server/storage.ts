@@ -218,6 +218,10 @@ export class DatabaseStorage implements IStorage {
 
     const feedback = this.generateFeedback(activitiesWithCorrectness, transcripts, chats, session, pollStats);
 
+    const exitTicketAnalysis = await this.generateExitTicketAnalysis(
+      courseSessionId, activitiesWithCorrectness, transcripts, totalStudents
+    );
+
     return {
       session,
       transcripts,
@@ -227,6 +231,7 @@ export class DatabaseStorage implements IStorage {
       reactionData,
       engagementTimeline,
       feedback,
+      exitTicketAnalysis,
       studentMetrics: {
         totalStudents,
         sessionTemperature,
@@ -245,6 +250,94 @@ export class DatabaseStorage implements IStorage {
         messages: s.totalMessages,
         handRaises: s.totalHandRaise,
       })).sort((a, b) => (b.activeTime || 0) - (a.activeTime || 0)),
+    };
+  }
+
+  private async generateExitTicketAnalysis(
+    courseSessionId: number,
+    activities: any[],
+    transcripts: SessionTranscript[],
+    totalStudents: number
+  ): Promise<any> {
+    const exitTickets = activities.filter(a => a.activityType === 'EXIT_TICKET' && a.activityHappened);
+    if (exitTickets.length === 0) return null;
+
+    const et = exitTickets[0];
+    const etStartSec = this.parseTimeToSeconds(et.startTime || '');
+    const etEndSec = this.parseTimeToSeconds(et.endTime || '');
+
+    const polls = await db.select().from(userPolls)
+      .where(eq(userPolls.courseSessionId, courseSessionId));
+
+    const etPolls = polls.filter(p => p.classroomActivityId === et.activityId);
+
+    const byQuestion: Record<string, { text: string; seen: number; answered: number; correct: number }> = {};
+    for (const p of etPolls) {
+      const qId = String(p.questionId || 'unknown');
+      if (!byQuestion[qId]) {
+        byQuestion[qId] = { text: p.questionText || '', seen: 0, answered: 0, correct: 0 };
+      }
+      if (p.pollSeen) byQuestion[qId].seen++;
+      if (p.pollAnswered) {
+        byQuestion[qId].answered++;
+        if (p.isCorrectAnswer) byQuestion[qId].correct++;
+      }
+    }
+
+    const questions = Object.entries(byQuestion).map(([id, q]) => ({
+      questionId: id,
+      questionText: q.text.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim(),
+      seen: q.seen,
+      answered: q.answered,
+      correct: q.correct,
+      percent: q.answered > 0 ? Math.round((q.correct / q.answered) * 100) : 0,
+    }));
+
+    const totalSeen = new Set(etPolls.filter(p => p.pollSeen).map(p => p.userId)).size;
+    const totalAnswered = new Set(etPolls.filter(p => p.pollAnswered).map(p => p.userId)).size;
+
+    let teacherTalkDuring = false;
+    let teacherTalkDetails = '';
+    const transcriptTimes = transcripts.map(t => ({
+      startSec: this.parseTimeToSeconds(t.startTime || ''),
+      endSec: this.parseTimeToSeconds(t.endTime || ''),
+      text: t.text || '',
+    }));
+
+    if (etStartSec !== null && etEndSec !== null) {
+      const overlapping = transcriptTimes.filter(t => {
+        if (t.startSec === null || t.endSec === null) return false;
+        return t.startSec < etEndSec && t.endSec > etStartSec;
+      });
+
+      if (overlapping.length > 0) {
+        teacherTalkDuring = true;
+        let totalOverlapSec = 0;
+        for (const t of overlapping) {
+          const overlapStart = Math.max(t.startSec!, etStartSec);
+          const overlapEnd = Math.min(t.endSec!, etEndSec);
+          if (overlapEnd > overlapStart) totalOverlapSec += (overlapEnd - overlapStart);
+        }
+        const topics = this.extractTopics(overlapping.map(t => t.text));
+        const overlapMin = Math.round(totalOverlapSec / 60 * 10) / 10;
+        teacherTalkDetails = `Teacher was talking for ${overlapMin} min during the exit ticket, discussing: ${topics}. Students should be answering independently without teacher guidance during exit tickets.`;
+      }
+    }
+
+    return {
+      activityId: et.activityId,
+      startTime: et.startTime,
+      endTime: et.endTime,
+      duration: et.duration,
+      plannedDuration: et.plannedDuration,
+      totalMcqs: et.totalMcqs,
+      totalStudents,
+      studentsWhoSaw: totalSeen,
+      studentsWhoAnswered: totalAnswered,
+      overallCorrectness: et.correctness,
+      questions,
+      teacherTalkDuring,
+      teacherTalkDetails,
     };
   }
 
