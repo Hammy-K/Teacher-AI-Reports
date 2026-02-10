@@ -269,6 +269,9 @@ export class DatabaseStorage implements IStorage {
     const polls = await db.select().from(userPolls)
       .where(eq(userPolls.courseSessionId, courseSessionId));
 
+    const chats = await db.select().from(sessionChats)
+      .where(eq(sessionChats.courseSessionId, courseSessionId));
+
     const etPolls = polls.filter(p => p.classroomActivityId === et.activityId);
 
     const byQuestion: Record<string, { text: string; seen: number; answered: number; correct: number }> = {};
@@ -284,20 +287,47 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    const questions = Object.entries(byQuestion).map(([id, q]) => ({
-      questionId: id,
-      questionText: q.text.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim(),
-      seen: q.seen,
-      answered: q.answered,
-      correct: q.correct,
-      percent: q.answered > 0 ? Math.round((q.correct / q.answered) * 100) : 0,
-    }));
+    const questions = Object.entries(byQuestion).map(([id, q]) => {
+      const cleanText = q.text.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+      const percent = q.answered > 0 ? Math.round((q.correct / q.answered) * 100) : 0;
+      const notAnswered = q.seen - q.answered;
+
+      const insights: string[] = [];
+
+      if (notAnswered > 0 && q.seen > 0) {
+        const skipPercent = Math.round((notAnswered / q.seen) * 100);
+        if (skipPercent >= 20) {
+          insights.push(`${notAnswered} students (${skipPercent}%) saw this question but didn't answer — question may have been too difficult or confusing.`);
+        }
+      }
+
+      if (percent >= 80) {
+        insights.push(`Strong result — most students understood this concept well.`);
+      } else if (percent >= 60) {
+        insights.push(`Acceptable but some students still struggled — may need brief review next session.`);
+      } else if (percent >= 40) {
+        insights.push(`Low correctness — this topic needs further explanation or re-teaching in the next session.`);
+      } else {
+        insights.push(`Very low correctness — the concept was not understood by the majority. The explanation may have been too confusing or too brief before the exit ticket.`);
+      }
+
+      return {
+        questionId: id,
+        questionText: cleanText,
+        seen: q.seen,
+        answered: q.answered,
+        correct: q.correct,
+        percent,
+        insights,
+      };
+    });
 
     const totalSeen = new Set(etPolls.filter(p => p.pollSeen).map(p => p.userId)).size;
     const totalAnswered = new Set(etPolls.filter(p => p.pollAnswered).map(p => p.userId)).size;
 
     let teacherTalkDuring = false;
-    let teacherTalkDetails = '';
+    let teacherTalkOverlapMin = 0;
+    let teacherTalkTopics = '';
     const transcriptTimes = transcripts.map(t => ({
       startSec: this.parseTimeToSeconds(t.startTime || ''),
       endSec: this.parseTimeToSeconds(t.endTime || ''),
@@ -318,10 +348,65 @@ export class DatabaseStorage implements IStorage {
           const overlapEnd = Math.min(t.endSec!, etEndSec);
           if (overlapEnd > overlapStart) totalOverlapSec += (overlapEnd - overlapStart);
         }
-        const topics = this.extractTopics(overlapping.map(t => t.text));
-        const overlapMin = Math.round(totalOverlapSec / 60 * 10) / 10;
-        teacherTalkDetails = `Teacher was talking for ${overlapMin} min during the exit ticket, discussing: ${topics}. Students should be answering independently without teacher guidance during exit tickets.`;
+        teacherTalkTopics = this.extractTopics(overlapping.map(t => t.text));
+        teacherTalkOverlapMin = Math.round(totalOverlapSec / 60 * 10) / 10;
       }
+    }
+
+    const etDurationMin = Math.round(et.duration / 60 * 10) / 10;
+    const etPlannedMin = Math.round(et.plannedDuration / 60 * 10) / 10;
+
+    const overallInsights: string[] = [];
+
+    if (totalAnswered < totalStudents) {
+      const missed = totalStudents - totalAnswered;
+      const missedPct = Math.round((missed / totalStudents) * 100);
+      overallInsights.push(`${missed} students (${missedPct}%) did not complete the exit ticket — they may have run out of time or disengaged before the activity started.`);
+    }
+
+    if (teacherTalkDuring) {
+      overallInsights.push(`Teacher was talking for ${teacherTalkOverlapMin} min during the exit ticket, discussing: ${teacherTalkTopics}. This may have given students hints or distracted them — exit tickets should be completed independently to accurately measure understanding.`);
+    }
+
+    const overallPercent = et.correctness?.percent ?? 0;
+    if (overallPercent >= 75) {
+      overallInsights.push(`Overall correctness is strong at ${overallPercent}% — students demonstrated good understanding of the lesson content.`);
+    } else if (overallPercent >= 50) {
+      overallInsights.push(`Overall correctness of ${overallPercent}% is moderate — some concepts from the lesson were not fully grasped by all students.`);
+    } else {
+      overallInsights.push(`Overall correctness is low at ${overallPercent}% — the lesson content may need to be revisited. Consider whether the explanation was too fast, too confusing, or if insufficient time was spent on key concepts.`);
+    }
+
+    if (et.duration < et.plannedDuration * 0.7) {
+      overallInsights.push(`Exit ticket was shorter than planned (${etDurationMin} min vs ${etPlannedMin} min planned) — less time was spent, which may explain incomplete responses.`);
+    } else if (et.duration > et.plannedDuration * 1.3) {
+      overallInsights.push(`Exit ticket ran longer than planned (${etDurationMin} min vs ${etPlannedMin} min planned) — students may have needed more time to process the questions.`);
+    }
+
+    const studentChats = chats.filter(c => c.userType === 'STUDENT');
+    if (etStartSec !== null && etEndSec !== null) {
+      const chatsDuringET = studentChats.filter(c => {
+        const ts = this.parseTimeToSeconds(c.createdAtTs || '');
+        return ts !== null && ts >= etStartSec && ts <= etEndSec;
+      });
+      const unansweredChats = chatsDuringET.filter(c => {
+        const chatTs = this.parseTimeToSeconds(c.createdAtTs || '');
+        if (chatTs === null) return false;
+        const hasTeacherReply = chats.some(r => {
+          if (r.userType === 'STUDENT') return false;
+          const rTs = this.parseTimeToSeconds(r.createdAtTs || '');
+          return rTs !== null && rTs > chatTs && rTs < chatTs + 120;
+        });
+        return !hasTeacherReply;
+      });
+      if (unansweredChats.length > 0) {
+        overallInsights.push(`${unansweredChats.length} student chat message${unansweredChats.length > 1 ? 's' : ''} during the exit ticket were not responded to — students may have been asking for clarification.`);
+      }
+    }
+
+    const highCorrectQs = questions.filter(q => q.percent >= 80);
+    if (highCorrectQs.length > 0 && teacherTalkDuring) {
+      overallInsights.push(`${highCorrectQs.length} question${highCorrectQs.length > 1 ? 's' : ''} had high correctness (80%+), yet the teacher was still talking during the exit ticket — time may have been wasted providing help on content students already understood.`);
     }
 
     return {
@@ -337,7 +422,9 @@ export class DatabaseStorage implements IStorage {
       overallCorrectness: et.correctness,
       questions,
       teacherTalkDuring,
-      teacherTalkDetails,
+      teacherTalkOverlapMin,
+      teacherTalkTopics,
+      overallInsights,
     };
   }
 

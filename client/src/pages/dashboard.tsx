@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   Users, Clock, ThermometerSun, CheckCircle, BarChart3, Percent,
-  ThumbsUp, AlertTriangle, BookOpen, ClipboardCheck, ChevronDown, ChevronRight
+  ThumbsUp, AlertTriangle, BookOpen, ClipboardCheck, ChevronDown, ChevronRight, MessageSquare
 } from "lucide-react";
 
 interface ActivityCorrectness {
@@ -31,6 +31,7 @@ interface ExitTicketQuestion {
   answered: number;
   correct: number;
   percent: number;
+  insights: string[];
 }
 
 interface ExitTicketAnalysis {
@@ -46,7 +47,9 @@ interface ExitTicketAnalysis {
   overallCorrectness: ActivityCorrectness | null;
   questions: ExitTicketQuestion[];
   teacherTalkDuring: boolean;
-  teacherTalkDetails: string;
+  teacherTalkOverlapMin: number;
+  teacherTalkTopics: string;
+  overallInsights: string[];
 }
 
 interface DashboardData {
@@ -422,43 +425,57 @@ export default function Dashboard() {
                     <AlertTriangle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
                     <div className="space-y-0.5">
                       <p className="text-sm font-medium text-destructive">Teacher was talking during Exit Ticket</p>
-                      <p className="text-xs text-muted-foreground" data-testid="et-teacher-talk-detail">{et.teacherTalkDetails}</p>
+                      <p className="text-xs text-muted-foreground" data-testid="et-teacher-talk-detail">
+                        Teacher talked for {et.teacherTalkOverlapMin} min during the exit ticket discussing: {et.teacherTalkTopics}. Students should answer independently.
+                      </p>
                     </div>
+                  </div>
+                )}
+
+                {et.overallInsights.length > 0 && (
+                  <div className="space-y-2" data-testid="et-overall-insights">
+                    <p className="text-sm font-medium">Insights</p>
+                    <ul className="space-y-1.5">
+                      {et.overallInsights.map((insight, iIdx) => (
+                        <li key={iIdx} className="flex gap-2 text-sm text-muted-foreground" data-testid={`et-insight-${iIdx}`}>
+                          <span className="flex-shrink-0 mt-1.5 h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+                          <span>{insight}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
 
                 {et.questions.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-sm font-medium">Question Breakdown</p>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm" data-testid="table-exit-ticket-questions">
-                        <thead>
-                          <tr className="border-b text-left">
-                            <th className="pb-2 pr-4 font-medium text-muted-foreground">#</th>
-                            <th className="pb-2 pr-4 font-medium text-muted-foreground">Question</th>
-                            <th className="pb-2 pr-4 font-medium text-muted-foreground">Answered</th>
-                            <th className="pb-2 pr-4 font-medium text-muted-foreground">Correct</th>
-                            <th className="pb-2 pr-4 font-medium text-muted-foreground">%</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {et.questions.map((q, qIdx) => (
-                            <tr key={q.questionId} className="border-b last:border-0" data-testid={`row-et-question-${qIdx}`}>
-                              <td className="py-2 pr-4 text-muted-foreground">{qIdx + 1}</td>
-                              <td className="py-2 pr-4 max-w-xs" data-testid={`text-et-question-${qIdx}`}>
-                                <span className="line-clamp-2 text-xs">{q.questionText}</span>
-                              </td>
-                              <td className="py-2 pr-4" data-testid={`text-et-answered-${qIdx}`}>{q.answered}</td>
-                              <td className="py-2 pr-4" data-testid={`text-et-correct-${qIdx}`}>{q.correct}</td>
-                              <td className="py-2 pr-4" data-testid={`text-et-percent-${qIdx}`}>
-                                <Badge variant={q.percent >= 60 ? "default" : "secondary"}>
-                                  {q.percent}%
-                                </Badge>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    <div className="space-y-3">
+                      {et.questions.map((q, qIdx) => (
+                        <div key={q.questionId} className="border rounded-md p-3 space-y-2" data-testid={`et-question-card-${qIdx}`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-2 min-w-0">
+                              <span className="text-sm text-muted-foreground flex-shrink-0">Q{qIdx + 1}.</span>
+                              <span className="text-sm line-clamp-2" data-testid={`text-et-question-${qIdx}`}>{q.questionText}</span>
+                            </div>
+                            <Badge variant={q.percent >= 60 ? "default" : "secondary"} data-testid={`text-et-percent-${qIdx}`}>
+                              {q.percent}%
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                            <span data-testid={`text-et-answered-${qIdx}`}>Answered: {q.answered}/{q.seen}</span>
+                            <span data-testid={`text-et-correct-${qIdx}`}>Correct: {q.correct}/{q.answered}</span>
+                          </div>
+                          {q.insights.length > 0 && (
+                            <div className="space-y-1">
+                              {q.insights.map((ins, insIdx) => (
+                                <p key={insIdx} className="text-xs text-muted-foreground pl-3 border-l-2 border-border" data-testid={`et-q-insight-${qIdx}-${insIdx}`}>
+                                  {ins}
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -512,6 +529,86 @@ export default function Dashboard() {
               )}
             </CardContent>
           </Card>
+        </div>
+
+        <div className="space-y-4" data-testid="section-other-comments">
+          <h2 className="text-xl font-semibold flex items-center gap-2" data-testid="heading-other-comments">
+            <MessageSquare className="h-5 w-5" />
+            Other Comments
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card data-testid="card-other-went-well">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <ThumbsUp className="h-5 w-5 text-green-600 dark:text-green-400" />
+                  What Went Well
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {feedback.wentWell.length > 0 ? (
+                  <ul className="space-y-4">
+                    {feedback.wentWell.map((item, idx) => (
+                      <li key={idx} className="space-y-1" data-testid={`other-well-${idx}`}>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant="outline">{item.activity}</Badge>
+                          <Badge variant="secondary" className="text-xs">
+                            {item.category === "time_management" ? "Time Management" : item.category === "pedagogy" ? "Pedagogy" : item.category === "student_stage" ? "Student Stage" : item.category}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{item.detail}</p>
+                        {item.recommended && (
+                          <div className="flex items-center gap-4 text-xs mt-1">
+                            <span className="text-muted-foreground">Recommended: <span className="font-medium text-foreground">{item.recommended}</span></span>
+                            <span className="text-muted-foreground">Actual: <span className="font-medium text-foreground">{item.actual}</span></span>
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No positive feedback items.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card data-testid="card-other-needs-improvement">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                  What Needs Improvement
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {feedback.needsImprovement.length > 0 ? (
+                  <ul className="space-y-4">
+                    {feedback.needsImprovement.map((item, idx) => (
+                      <li key={idx} className="space-y-1" data-testid={`other-improve-${idx}`}>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant="outline">{item.activity}</Badge>
+                          <Badge variant="secondary" className="text-xs">
+                            {item.category === "time_management" ? "Time Management" : item.category === "pedagogy" ? "Pedagogy" : item.category === "student_stage" ? "Student Stage" : item.category}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{item.detail}</p>
+                        {item.recommended && (
+                          <div className="flex items-center gap-4 text-xs mt-1">
+                            <span className="text-muted-foreground">Recommended: <span className="font-medium text-foreground">{item.recommended}</span></span>
+                            <span className="text-muted-foreground">Actual: <span className="font-medium text-foreground">{item.actual}</span></span>
+                          </div>
+                        )}
+                        {item.segments && item.segments.length > 0 && (
+                          <SegmentBreakdown segments={item.segments} parentIdx={1000 + idx} />
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No improvement areas identified.</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
       </div>
