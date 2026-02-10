@@ -91,41 +91,73 @@ interface DashboardData {
   exitTicketAnalysis: ExitTicketAnalysis | null;
 }
 
-function FeedbackItemDisplay({ item, idx, prefix }: { item: FeedbackItem; idx: number; prefix: string }) {
+function FeedbackCard({
+  items,
+  icon,
+  title,
+  testIdPrefix,
+}: {
+  items: FeedbackItem[];
+  icon: "positive" | "negative";
+  title: string;
+  testIdPrefix: string;
+}) {
   return (
-    <div className="space-y-1" data-testid={`feedback-${prefix}-${idx}`}>
-      <div className="flex items-center gap-2 flex-wrap">
-        <Badge variant="outline" data-testid={`badge-${prefix}-activity-${idx}`}>{item.activity}</Badge>
-        <Badge variant="secondary">
-          {item.category === "time_management" ? "Time Management" : item.category === "pedagogy" ? "Pedagogy" : "Teaching Method"}
-        </Badge>
-      </div>
-      <p className="text-sm text-muted-foreground" data-testid={`text-${prefix}-detail-${idx}`}>{item.detail}</p>
-      {item.recommended && (
-        <div className="flex items-center gap-4 text-xs mt-1">
-          <span className="text-muted-foreground">Recommended: <span className="font-medium text-foreground">{item.recommended}</span></span>
-          <span className="text-muted-foreground">Actual: <span className="font-medium text-foreground">{item.actual}</span></span>
-        </div>
-      )}
-    </div>
+    <Card data-testid={`card-${testIdPrefix}`}>
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          {icon === "positive" ? (
+            <ThumbsUp className="h-5 w-5 text-green-600 dark:text-green-400" />
+          ) : (
+            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+          )}
+          {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {items.length > 0 ? (
+          <ul className="space-y-4">
+            {items.map((item, idx) => (
+              <li key={idx} className="space-y-1" data-testid={`${testIdPrefix}-${idx}`}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge variant="outline">{item.activity}</Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">{item.detail}</p>
+                {item.recommended && (
+                  <div className="flex items-center gap-4 text-xs mt-1 flex-wrap">
+                    <span className="text-muted-foreground">Recommended: <span className="font-medium text-foreground">{item.recommended}</span></span>
+                    <span className="text-muted-foreground">Actual: <span className="font-medium text-foreground">{item.actual}</span></span>
+                  </div>
+                )}
+                {item.segments && item.segments.length > 0 && (
+                  <SegmentBreakdown segments={item.segments} parentIdx={idx} prefix={testIdPrefix} />
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">Nothing to report.</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
-function SegmentBreakdown({ segments, parentIdx }: { segments: string[]; parentIdx: number }) {
+function SegmentBreakdown({ segments, parentIdx, prefix }: { segments: string[]; parentIdx: number; prefix: string }) {
   const [open, setOpen] = useState(false);
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <CollapsibleTrigger
         className="flex items-center gap-1 text-xs font-medium text-muted-foreground mt-2 hover-elevate rounded-md px-1.5 py-0.5"
-        data-testid={`toggle-segments-${parentIdx}`}
+        data-testid={`toggle-segments-${prefix}-${parentIdx}`}
       >
         {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         Segment breakdown ({segments.length} stretches)
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <ul className="mt-1.5 space-y-1" data-testid={`pedagogy-segments-${parentIdx}`}>
+        <ul className="mt-1.5 space-y-1" data-testid={`segments-${prefix}-${parentIdx}`}>
           {segments.map((seg, sIdx) => (
-            <li key={sIdx} className="text-xs text-muted-foreground pl-3 border-l-2 border-border" data-testid={`pedagogy-segment-${parentIdx}-${sIdx}`}>
+            <li key={sIdx} className="text-xs text-muted-foreground pl-3 border-l-2 border-border">
               {seg}
             </li>
           ))}
@@ -139,6 +171,7 @@ export default function Dashboard() {
   const { data, isLoading, error } = useQuery<DashboardData>({
     queryKey: ["/api/dashboard/70712"],
   });
+  const [questionsOpen, setQuestionsOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -206,12 +239,17 @@ export default function Dashboard() {
     }, {})
   );
 
-  const tmWentWell = feedback.wentWell.filter(i => i.category === "time_management" || i.category === "student_stage");
-  const tmNeedsImprovement = feedback.needsImprovement.filter(i => i.category === "time_management" || i.category === "student_stage");
+  const tmCategories = new Set(["time_management", "student_stage"]);
+  const pedCategories = new Set(["pedagogy"]);
 
-  const pedagogyWentWell = feedback.wentWell.filter(i => i.category === "pedagogy");
-  const pedagogyNeedsImprovement = feedback.needsImprovement.filter(i => i.category === "pedagogy");
-  const allPedagogy = [...pedagogyWentWell.map(i => ({ ...i, type: "positive" as const })), ...pedagogyNeedsImprovement.map(i => ({ ...i, type: "negative" as const }))];
+  const tmWentWell = feedback.wentWell.filter(i => tmCategories.has(i.category));
+  const tmNeedsImprovement = feedback.needsImprovement.filter(i => tmCategories.has(i.category));
+
+  const pedWentWell = feedback.wentWell.filter(i => pedCategories.has(i.category));
+  const pedNeedsImprovement = feedback.needsImprovement.filter(i => pedCategories.has(i.category));
+
+  const otherWentWell = feedback.wentWell.filter(i => !tmCategories.has(i.category) && !pedCategories.has(i.category));
+  const otherNeedsImprovement = feedback.needsImprovement.filter(i => !tmCategories.has(i.category) && !pedCategories.has(i.category));
 
   const et = exitTicketAnalysis;
 
@@ -226,13 +264,13 @@ export default function Dashboard() {
           </p>
         </div>
 
+        {/* ── 1. OVERVIEW ── */}
         <Card data-testid="card-overview-metrics">
           <CardHeader>
             <CardTitle className="text-lg">Overview</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
-
               <div className="space-y-1" data-testid="metric-correctness">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <CheckCircle className="h-4 w-4" />
@@ -240,7 +278,6 @@ export default function Dashboard() {
                 </div>
                 <p className="text-3xl font-bold" data-testid="text-correctness-value">{pollStats.correctnessPercent}%</p>
               </div>
-
               <div className="space-y-1" data-testid="metric-attendance">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Users className="h-4 w-4" />
@@ -248,7 +285,6 @@ export default function Dashboard() {
                 </div>
                 <p className="text-3xl font-bold" data-testid="text-attendance-value">{studentMetrics.totalStudents}</p>
               </div>
-
               <div className="space-y-1" data-testid="metric-temperature">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <ThermometerSun className="h-4 w-4" />
@@ -256,7 +292,6 @@ export default function Dashboard() {
                 </div>
                 <p className="text-3xl font-bold" data-testid="text-temperature-value">{sessionTemp}%</p>
               </div>
-
               <div className="space-y-1" data-testid="metric-teaching-time">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Clock className="h-4 w-4" />
@@ -264,7 +299,6 @@ export default function Dashboard() {
                 </div>
                 <p className="text-3xl font-bold" data-testid="text-teaching-time-value">{teachingMinutes} min</p>
               </div>
-
               <div className="space-y-1" data-testid="metric-session-completed">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Percent className="h-4 w-4" />
@@ -273,67 +307,18 @@ export default function Dashboard() {
                 <p className="text-3xl font-bold" data-testid="text-session-completed-value">{studentMetrics.sessionCompletedPercent}%</p>
                 <p className="text-xs text-muted-foreground">avg {studentMetrics.avgLearningTime} / {teachingMinutes} min</p>
               </div>
-
             </div>
           </CardContent>
         </Card>
 
-        <div className="space-y-4" data-testid="section-time-management">
-          <h2 className="text-xl font-semibold flex items-center gap-2" data-testid="heading-time-management">
-            <Clock className="h-5 w-5" />
-            Time Management
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card data-testid="card-went-well">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <ThumbsUp className="h-5 w-5 text-green-600 dark:text-green-400" />
-                  What Went Right
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {tmWentWell.length > 0 ? (
-                  <div className="space-y-4">
-                    {tmWentWell.map((item, idx) => (
-                      <FeedbackItemDisplay key={idx} item={item} idx={idx} prefix="well" />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No positive feedback items identified.</p>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card data-testid="card-needs-improvement">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-                  What Needs Improvement
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {tmNeedsImprovement.length > 0 ? (
-                  <div className="space-y-4">
-                    {tmNeedsImprovement.map((item, idx) => (
-                      <FeedbackItemDisplay key={idx} item={item} idx={idx} prefix="improve" />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No improvement areas identified.</p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
+        {/* ── 2. ACTIVITIES ── */}
         <Card data-testid="card-activity-table">
           <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 flex-wrap">
             <CardTitle className="text-lg flex items-center gap-2">
               <BarChart3 className="h-5 w-5" />
               Activities
             </CardTitle>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <Badge variant="outline" data-testid="badge-total-planned">Planned: {totalPlanned}</Badge>
               <Badge variant="outline" data-testid="badge-total-happened">Happened: {totalHappened}</Badge>
               <Badge variant="outline" data-testid="badge-total-not-happened">Not Happened: {totalNotHappened}</Badge>
@@ -369,13 +354,13 @@ export default function Dashboard() {
                           </Badge>
                         </td>
                         <td className="py-3 pr-4" data-testid={`text-activity-duration-${group.activityType}`}>
-                          {group.totalDuration > 0 ? group.totalDuration : "—"}
+                          {group.totalDuration > 0 ? group.totalDuration : "\u2014"}
                         </td>
                         <td className="py-3 pr-4" data-testid={`text-activity-planned-${group.activityType}`}>
-                          {group.totalPlannedDuration > 0 ? group.totalPlannedDuration : "—"}
+                          {group.totalPlannedDuration > 0 ? group.totalPlannedDuration : "\u2014"}
                         </td>
                         <td className="py-3 pr-4" data-testid={`text-activity-correctness-${group.activityType}`}>
-                          {correctnessPercent != null ? `${correctnessPercent}%` : "—"}
+                          {correctnessPercent != null ? `${correctnessPercent}%` : "\u2014"}
                         </td>
                       </tr>
                     );
@@ -391,6 +376,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
+        {/* ── 3. EXIT TICKET ── */}
         {et && (
           <div className="space-y-4" data-testid="section-exit-ticket">
             <h2 className="text-xl font-semibold flex items-center gap-2" data-testid="heading-exit-ticket">
@@ -447,169 +433,88 @@ export default function Dashboard() {
                 )}
 
                 {et.questions.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">Question Breakdown</p>
-                    <div className="space-y-3">
-                      {et.questions.map((q, qIdx) => (
-                        <div key={q.questionId} className="border rounded-md p-3 space-y-2" data-testid={`et-question-card-${qIdx}`}>
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex items-start gap-2 min-w-0">
-                              <span className="text-sm text-muted-foreground flex-shrink-0">Q{qIdx + 1}.</span>
-                              <span className="text-sm line-clamp-2" data-testid={`text-et-question-${qIdx}`}>{q.questionText}</span>
+                  <Collapsible open={questionsOpen} onOpenChange={setQuestionsOpen}>
+                    <CollapsibleTrigger
+                      className="flex items-center gap-2 text-sm font-medium hover-elevate rounded-md px-2 py-1"
+                      data-testid="toggle-question-breakdown"
+                    >
+                      {questionsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      Question Breakdown ({et.questions.length} questions)
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="space-y-3 mt-3">
+                        {et.questions.map((q, qIdx) => (
+                          <div key={q.questionId} className="border rounded-md p-3 space-y-2" data-testid={`et-question-card-${qIdx}`}>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-2 min-w-0">
+                                <span className="text-sm text-muted-foreground flex-shrink-0">Q{qIdx + 1}.</span>
+                                <span className="text-sm line-clamp-2" data-testid={`text-et-question-${qIdx}`}>{q.questionText}</span>
+                              </div>
+                              <Badge variant={q.percent >= 60 ? "default" : "secondary"} data-testid={`text-et-percent-${qIdx}`}>
+                                {q.percent}%
+                              </Badge>
                             </div>
-                            <Badge variant={q.percent >= 60 ? "default" : "secondary"} data-testid={`text-et-percent-${qIdx}`}>
-                              {q.percent}%
-                            </Badge>
-                          </div>
-                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span data-testid={`text-et-answered-${qIdx}`}>Answered: {q.answered}/{q.seen}</span>
-                            <span data-testid={`text-et-correct-${qIdx}`}>Correct: {q.correct}/{q.answered}</span>
-                          </div>
-                          {q.insights.length > 0 && (
-                            <div className="space-y-1">
-                              {q.insights.map((ins, insIdx) => (
-                                <p key={insIdx} className="text-xs text-muted-foreground pl-3 border-l-2 border-border" data-testid={`et-q-insight-${qIdx}-${insIdx}`}>
-                                  {ins}
-                                </p>
-                              ))}
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                              <span data-testid={`text-et-answered-${qIdx}`}>Answered: {q.answered}/{q.seen}</span>
+                              <span data-testid={`text-et-correct-${qIdx}`}>Correct: {q.correct}/{q.answered}</span>
                             </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                            {q.insights.length > 0 && (
+                              <div className="space-y-1">
+                                {q.insights.map((ins, insIdx) => (
+                                  <p key={insIdx} className="text-xs text-muted-foreground pl-3 border-l-2 border-border" data-testid={`et-q-insight-${qIdx}-${insIdx}`}>
+                                    {ins}
+                                  </p>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
                 )}
               </CardContent>
             </Card>
           </div>
         )}
 
+        {/* ── 4. TIME MANAGEMENT ── */}
+        <div className="space-y-4" data-testid="section-time-management">
+          <h2 className="text-xl font-semibold flex items-center gap-2" data-testid="heading-time-management">
+            <Clock className="h-5 w-5" />
+            Time Management
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <FeedbackCard items={tmWentWell} icon="positive" title="What Went Right" testIdPrefix="tm-well" />
+            <FeedbackCard items={tmNeedsImprovement} icon="negative" title="What Needs Improvement" testIdPrefix="tm-improve" />
+          </div>
+        </div>
+
+        {/* ── 5. PEDAGOGY ── */}
         <div className="space-y-4" data-testid="section-pedagogy">
           <h2 className="text-xl font-semibold flex items-center gap-2" data-testid="heading-pedagogy">
             <BookOpen className="h-5 w-5" />
             Pedagogy
           </h2>
-
-          <Card data-testid="card-pedagogy">
-            <CardContent className="pt-6">
-              {allPedagogy.length > 0 ? (
-                <ul className="space-y-5" data-testid="list-pedagogy">
-                  {allPedagogy.map((item, idx) => (
-                    <li key={idx} className="flex gap-3" data-testid={`pedagogy-item-${idx}`}>
-                      <div className="mt-0.5 flex-shrink-0">
-                        {item.type === "positive" ? (
-                          <ThumbsUp className="h-4 w-4 text-green-600 dark:text-green-400" />
-                        ) : (
-                          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                        )}
-                      </div>
-                      <div className="space-y-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm" data-testid={`pedagogy-activity-${idx}`}>{item.activity}</span>
-                          <Badge variant={item.type === "positive" ? "default" : "secondary"} className="text-xs">
-                            {item.type === "positive" ? "Strength" : "Improve"}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground" data-testid={`pedagogy-detail-${idx}`}>{item.detail}</p>
-                        {item.recommended && (
-                          <div className="flex items-center gap-4 text-xs">
-                            <span className="text-muted-foreground">Recommended: <span className="font-medium text-foreground">{item.recommended}</span></span>
-                            <span className="text-muted-foreground">Actual: <span className="font-medium text-foreground">{item.actual}</span></span>
-                          </div>
-                        )}
-                        {item.segments && item.segments.length > 0 && (
-                          <SegmentBreakdown segments={item.segments} parentIdx={idx} />
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted-foreground">No pedagogy feedback available.</p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-4" data-testid="section-other-comments">
-          <h2 className="text-xl font-semibold flex items-center gap-2" data-testid="heading-other-comments">
-            <MessageSquare className="h-5 w-5" />
-            Other Comments
-          </h2>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card data-testid="card-other-went-well">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <ThumbsUp className="h-5 w-5 text-green-600 dark:text-green-400" />
-                  What Went Well
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {feedback.wentWell.length > 0 ? (
-                  <ul className="space-y-4">
-                    {feedback.wentWell.map((item, idx) => (
-                      <li key={idx} className="space-y-1" data-testid={`other-well-${idx}`}>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant="outline">{item.activity}</Badge>
-                          <Badge variant="secondary" className="text-xs">
-                            {item.category === "time_management" ? "Time Management" : item.category === "pedagogy" ? "Pedagogy" : item.category === "student_stage" ? "Student Stage" : item.category}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground">{item.detail}</p>
-                        {item.recommended && (
-                          <div className="flex items-center gap-4 text-xs mt-1">
-                            <span className="text-muted-foreground">Recommended: <span className="font-medium text-foreground">{item.recommended}</span></span>
-                            <span className="text-muted-foreground">Actual: <span className="font-medium text-foreground">{item.actual}</span></span>
-                          </div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No positive feedback items.</p>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card data-testid="card-other-needs-improvement">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-                  What Needs Improvement
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {feedback.needsImprovement.length > 0 ? (
-                  <ul className="space-y-4">
-                    {feedback.needsImprovement.map((item, idx) => (
-                      <li key={idx} className="space-y-1" data-testid={`other-improve-${idx}`}>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant="outline">{item.activity}</Badge>
-                          <Badge variant="secondary" className="text-xs">
-                            {item.category === "time_management" ? "Time Management" : item.category === "pedagogy" ? "Pedagogy" : item.category === "student_stage" ? "Student Stage" : item.category}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground">{item.detail}</p>
-                        {item.recommended && (
-                          <div className="flex items-center gap-4 text-xs mt-1">
-                            <span className="text-muted-foreground">Recommended: <span className="font-medium text-foreground">{item.recommended}</span></span>
-                            <span className="text-muted-foreground">Actual: <span className="font-medium text-foreground">{item.actual}</span></span>
-                          </div>
-                        )}
-                        {item.segments && item.segments.length > 0 && (
-                          <SegmentBreakdown segments={item.segments} parentIdx={1000 + idx} />
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No improvement areas identified.</p>
-                )}
-              </CardContent>
-            </Card>
+            <FeedbackCard items={pedWentWell} icon="positive" title="What Went Right" testIdPrefix="ped-well" />
+            <FeedbackCard items={pedNeedsImprovement} icon="negative" title="What Needs Improvement" testIdPrefix="ped-improve" />
           </div>
         </div>
+
+        {/* ── 6. OTHER COMMENTS ── */}
+        {(otherWentWell.length > 0 || otherNeedsImprovement.length > 0) && (
+          <div className="space-y-4" data-testid="section-other-comments">
+            <h2 className="text-xl font-semibold flex items-center gap-2" data-testid="heading-other-comments">
+              <MessageSquare className="h-5 w-5" />
+              Other Comments
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <FeedbackCard items={otherWentWell} icon="positive" title="What Went Right" testIdPrefix="other-well" />
+              <FeedbackCard items={otherNeedsImprovement} icon="negative" title="What Needs Improvement" testIdPrefix="other-improve" />
+            </div>
+          </div>
+        )}
 
       </div>
     </div>
