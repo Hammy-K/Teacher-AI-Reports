@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { parse } from "csv-parse/sync";
 import { storage } from "./storage";
+import iconv from "iconv-lite";
 import type {
   InsertCourseSession, InsertSessionTranscript, InsertSessionChat,
   InsertClassroomActivity, InsertUserPoll, InsertUserReaction, InsertUserSession,
@@ -9,10 +10,32 @@ import type {
 
 const ASSETS_DIR = path.join(process.cwd(), "attached_assets");
 
+function fixMacRomanArabic(str: string): string {
+  if (!str) return str;
+  const hasGarbled = /[\u00FF\u0178\u00DF\u2019\u00E6\u00A3\u00AB\u00BB\u2202\u222B\u00B5\u03C0\u2206\u221A\u2265\u2264]/.test(str);
+  if (!hasGarbled) return str;
+  try {
+    const buf = iconv.encode(str, "macroman");
+    const decoded = buf.toString("utf8");
+    const hasArabic = /[\u0600-\u06FF]/.test(decoded);
+    if (hasArabic) return decoded;
+  } catch {}
+  return str;
+}
+
+function fixRowEncoding(row: any): any {
+  const fixed: any = {};
+  for (const [key, val] of Object.entries(row)) {
+    fixed[key] = typeof val === "string" ? fixMacRomanArabic(val) : val;
+  }
+  return fixed;
+}
+
 function readCsv(filename: string): any[] {
   const filePath = path.join(ASSETS_DIR, filename);
   const content = fs.readFileSync(filePath, "utf-8");
-  return parse(content, { columns: true, skip_empty_lines: true, relax_column_count: true });
+  const rows = parse(content, { columns: true, skip_empty_lines: true, relax_column_count: true });
+  return rows.map(fixRowEncoding);
 }
 
 function safeInt(val: any): number | null {
