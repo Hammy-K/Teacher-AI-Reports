@@ -200,7 +200,7 @@ export class DatabaseStorage implements IStorage {
     ]);
 
     const teacherRecord = students.find((s: any) => s.userType === 'TEACHER');
-    let teacherName = teacherRecord?.userName || 'معلم غير معروف';
+    let teacherName = teacherRecord?.userName || 'Unknown Teacher';
     teacherName = teacherName.replace(/أ\.(?!\s)/g, 'أ. ').replace(/\s+ال\s+/g, ' آل ').trim();
     const { topic, level } = this.parseSessionNameParts(session?.courseSessionName || '');
 
@@ -358,18 +358,18 @@ export class DatabaseStorage implements IStorage {
     // 1. Content Mastery (إتقان المحتوى والشرح)
     let contentScore = 3;
     const evidence1: string[] = [];
-    if (totalQuestions >= 10) { contentScore += 0.5; evidence1.push(`تم تغطية ${totalQuestions} سؤال — تغطية جيدة`); }
-    else if (totalQuestions >= 6) { evidence1.push(`تم تغطية ${totalQuestions} سؤال`); }
-    else { contentScore -= 0.5; evidence1.push(`${totalQuestions} أسئلة فقط — تغطية محدودة للمحتوى`); }
+    if (totalQuestions >= 10) { contentScore += 0.5; evidence1.push(`Session included ${totalQuestions} questions — good coverage`); }
+    else if (totalQuestions >= 6) { evidence1.push(`Session included ${totalQuestions} questions`); }
+    else { contentScore -= 0.5; evidence1.push(`Only ${totalQuestions} questions — limited content coverage`); }
 
-    if (overallCorrectness >= 70) { contentScore += 0.5; evidence1.push(`نسبة الإجابات الصحيحة ${overallCorrectness}% — فهم قوي`); }
-    else if (overallCorrectness >= 50) { evidence1.push(`نسبة الإجابات الصحيحة ${overallCorrectness}% — فهم متوسط`); }
-    else { contentScore -= 0.5; evidence1.push(`نسبة الإجابات الصحيحة ${overallCorrectness}% — ضعف في استيعاب المحتوى`); }
+    if (overallCorrectness >= 70) { contentScore += 0.5; evidence1.push(`Overall correctness ${overallCorrectness}% — strong comprehension`); }
+    else if (overallCorrectness >= 50) { evidence1.push(`Overall correctness ${overallCorrectness}% — moderate comprehension`); }
+    else { contentScore -= 0.5; evidence1.push(`Overall correctness ${overallCorrectness}% — content comprehension issues`); }
 
     const highQs = (pollStats.byQuestion || []).filter((q: any) => q.percent >= 70).length;
     const lowQs = (pollStats.byQuestion || []).filter((q: any) => q.percent < 40).length;
-    if (highQs >= totalQuestions * 0.5) { contentScore += 0.5; evidence1.push(`${highQs}/${totalQuestions} سؤال فوق 70% — تم توصيل المحتوى بشكل جيد`); }
-    if (lowQs >= totalQuestions * 0.3) { contentScore -= 0.5; evidence1.push(`${lowQs}/${totalQuestions} سؤال أقل من 40% — عدة مفاهيم لم تُفهم جيداً`); }
+    if (highQs >= totalQuestions * 0.5) { contentScore += 0.5; evidence1.push(`${highQs}/${totalQuestions} questions above 70% — content delivered well`); }
+    if (lowQs >= totalQuestions * 0.3) { contentScore -= 0.5; evidence1.push(`${lowQs}/${totalQuestions} questions below 40% — several concepts not well understood`); }
 
     contentScore = Math.max(1, Math.min(5, Math.round(contentScore * 2) / 2));
     criteria.push({
@@ -379,33 +379,33 @@ export class DatabaseStorage implements IStorage {
       score: contentScore,
       evidence: evidence1,
       recommendations: contentScore < 4 ? [
-        lowQs > 0 ? "أعد شرح المفاهيم التي سجلت أقل من 40% باستخدام أساليب مختلفة" : "",
-        overallCorrectness < 60 ? "أبطئ في الشرح وأضف المزيد من الأمثلة المحلولة قبل التحقق من الفهم" : "",
-        totalQuestions < 8 ? "أضف المزيد من أسئلة التحقق من الفهم خلال الحصة" : "",
-      ].filter(Boolean) : ["حافظ على مستوى جودة التدريس الحالي"],
-      notes: `${totalQuestions} سؤال، نسبة الإجابات الصحيحة ${overallCorrectness}%، ${highQs} قوي / ${lowQs} ضعيف`,
+        lowQs > 0 ? "Re-explain concepts that scored below 40% using different approaches" : "",
+        overallCorrectness < 60 ? "Slow down explanations and add more worked examples before checking understanding" : "",
+        totalQuestions < 8 ? "Add more comprehension check questions during the session" : "",
+      ].filter(Boolean) : ["Maintain current teaching quality level"],
+      notes: `${totalQuestions} questions, overall correctness ${overallCorrectness}%, ${highQs} strong / ${lowQs} weak`,
     });
 
     // 2. Student Engagement (دعم الطلاب وتحفيزهم)
     let engScore = 3;
     const evidence2: string[] = [];
 
-    if (responseRate >= 85) { engScore += 0.5; evidence2.push(`معدل استجابة ${responseRate}% — مشاركة عالية`); }
-    else if (responseRate >= 70) { evidence2.push(`معدل استجابة ${responseRate}%`); }
-    else { engScore -= 0.5; evidence2.push(`معدل استجابة ${responseRate}% — كثير من الطلاب لم يستجيبوا`); }
+    if (responseRate >= 85) { engScore += 0.5; evidence2.push(`Response rate ${responseRate}% — high participation`); }
+    else if (responseRate >= 70) { evidence2.push(`Response rate ${responseRate}%`); }
+    else { engScore -= 0.5; evidence2.push(`Response rate ${responseRate}% — many students did not respond`); }
 
-    if (sessionTemperature >= 80) { engScore += 0.5; evidence2.push(`حرارة الحصة ${sessionTemperature}% — تفاعل عالي`); }
-    else if (sessionTemperature >= 60) { evidence2.push(`حرارة الحصة ${sessionTemperature}%`); }
-    else { engScore -= 0.5; evidence2.push(`حرارة الحصة ${sessionTemperature}% — تفاعل منخفض`); }
+    if (sessionTemperature >= 80) { engScore += 0.5; evidence2.push(`Session temperature ${sessionTemperature}% — high engagement`); }
+    else if (sessionTemperature >= 60) { evidence2.push(`Session temperature ${sessionTemperature}%`); }
+    else { engScore -= 0.5; evidence2.push(`Session temperature ${sessionTemperature}% — low engagement`); }
 
     const chatParticipationRate = totalStudents > 0 ? Math.round((uniqueChatStudents / totalStudents) * 100) : 0;
-    if (chatParticipationRate >= 20) { engScore += 0.5; evidence2.push(`${uniqueChatStudents} طالب (${chatParticipationRate}%) شاركوا في المحادثة`); }
-    else if (chatParticipationRate >= 10) { evidence2.push(`${uniqueChatStudents} طالب (${chatParticipationRate}%) شاركوا في المحادثة`); }
-    else { engScore -= 0.5; evidence2.push(`فقط ${uniqueChatStudents} طالب (${chatParticipationRate}%) استخدموا المحادثة — تفاعل منخفض`); }
+    if (chatParticipationRate >= 20) { engScore += 0.5; evidence2.push(`${uniqueChatStudents} students (${chatParticipationRate}%) participated in chat`); }
+    else if (chatParticipationRate >= 10) { evidence2.push(`${uniqueChatStudents} students (${chatParticipationRate}%) participated in chat`); }
+    else { engScore -= 0.5; evidence2.push(`Only ${uniqueChatStudents} students (${chatParticipationRate}%) used chat — low engagement`); }
 
-    if (positivePercent >= 80) { engScore += 0.5; evidence2.push(`مشاعر إيجابية ${positivePercent}% (${positiveUsers}/${totalSentiment})`); }
-    else if (positivePercent >= 60) { evidence2.push(`مشاعر إيجابية ${positivePercent}%`); }
-    else { engScore -= 0.5; evidence2.push(`فقط ${positivePercent}% مشاعر إيجابية — قد لا يستمتع الطلاب بالحصة`); }
+    if (positivePercent >= 80) { engScore += 0.5; evidence2.push(`Positive sentiment ${positivePercent}% (${positiveUsers}/${totalSentiment})`); }
+    else if (positivePercent >= 60) { evidence2.push(`Positive sentiment ${positivePercent}%`); }
+    else { engScore -= 0.5; evidence2.push(`Only ${positivePercent}% positive sentiment — students may not be enjoying the session`); }
 
     engScore = Math.max(1, Math.min(5, Math.round(engScore * 2) / 2));
     criteria.push({
@@ -415,26 +415,26 @@ export class DatabaseStorage implements IStorage {
       score: engScore,
       evidence: evidence2,
       recommendations: engScore < 4 ? [
-        responseRate < 80 ? "شجع جميع الطلاب على الاستجابة للاستطلاعات — امنحهم وقتاً كافياً" : "",
-        chatParticipationRate < 15 ? "اطلب من الطلاب الرد في المحادثة على أسئلة التحقق من الفهم" : "",
-        sessionTemperature < 70 ? "زد التفاعل باستخدام عناصر تفاعلية أكثر وتعزيز إيجابي" : "",
-      ].filter(Boolean) : ["استمر في تعزيز تفاعل الطلاب"],
-      notes: `${totalStudents} طالب، معدل استجابة ${responseRate}%، حرارة ${sessionTemperature}%`,
+        responseRate < 80 ? "Encourage all students to respond to polls — give them enough time" : "",
+        chatParticipationRate < 15 ? "Ask students to reply in chat for comprehension check questions" : "",
+        sessionTemperature < 70 ? "Increase engagement using more interactive elements and positive reinforcement" : "",
+      ].filter(Boolean) : ["Continue reinforcing student engagement"],
+      notes: `${totalStudents} students, response rate ${responseRate}%, temperature ${sessionTemperature}%`,
     });
 
     // 3. Tutor Communication (التواصل وحضور المعلّم)
     let commScore = 3;
     const evidence3: string[] = [];
 
-    if (teacherChats.length >= 5) { commScore += 0.5; evidence3.push(`أرسل المعلم ${teacherChats.length} رسالة — تواصل فعال`); }
-    else if (teacherChats.length >= 1) { evidence3.push(`أرسل المعلم ${teacherChats.length} رسالة`); }
-    else { commScore -= 0.5; evidence3.push("لم يستخدم المعلم المحادثة للتواصل مع الطلاب"); }
+    if (teacherChats.length >= 5) { commScore += 0.5; evidence3.push(`The teacher sent ${teacherChats.length} messages — effective communication`); }
+    else if (teacherChats.length >= 1) { evidence3.push(`The teacher sent ${teacherChats.length} messages`); }
+    else { commScore -= 0.5; evidence3.push("The teacher did not use chat to communicate with students"); }
 
-    if (longSegments.length === 0) { commScore += 0.5; evidence3.push(`جميع مقاطع الحديث أقل من دقيقتين — إيقاع وتفاعل جيد`); }
-    else { commScore -= 0.5; evidence3.push(`${longSegments.length} مقطع حديث تجاوز دقيقتين — يجب التقسيم بالتفاعل`); }
+    if (longSegments.length === 0) { commScore += 0.5; evidence3.push(`All talk segments under 2 minutes — good pacing and interaction`); }
+    else { commScore -= 0.5; evidence3.push(`${longSegments.length} talk segments exceeded 2 minutes — should break with interaction`); }
 
-    if (positivePercent >= 75) { commScore += 0.5; evidence3.push(`مشاعر إيجابية ${positivePercent}% تدل على علاقة جيدة مع الطلاب`); }
-    else if (positivePercent < 60) { commScore -= 0.5; evidence3.push(`مشاعر إيجابية منخفضة (${positivePercent}%) قد تدل على مشاكل في التواصل`); }
+    if (positivePercent >= 75) { commScore += 0.5; evidence3.push(`Positive sentiment ${positivePercent}% indicates good relationship with students`); }
+    else if (positivePercent < 60) { commScore -= 0.5; evidence3.push(`Low positive sentiment (${positivePercent}%) may indicate communication issues`); }
 
     commScore = Math.max(1, Math.min(5, Math.round(commScore * 2) / 2));
     criteria.push({
@@ -444,10 +444,10 @@ export class DatabaseStorage implements IStorage {
       score: commScore,
       evidence: evidence3,
       recommendations: commScore < 4 ? [
-        teacherChats.length < 3 ? "تفاعل مع أسئلة الطلاب في المحادثة بشكل أكثر" : "",
-        longSegments.length > 0 ? "قسّم مقاطع الحديث الطويلة بتفاعل الطلاب كل دقيقتين" : "",
-      ].filter(Boolean) : ["أسلوب التواصل فعال"],
-      notes: `${teacherChats.length} رسالة للمعلم، أطول مقطع ${longestSegMin} د`,
+        teacherChats.length < 3 ? "Engage more with student questions in chat" : "",
+        longSegments.length > 0 ? "Break long talk segments with student interaction every 2 minutes" : "",
+      ].filter(Boolean) : ["Communication style is effective"],
+      notes: `${teacherChats.length} teacher messages, longest segment ${longestSegMin} min`,
     });
 
     // 4. Time Management (إدارة الوقت والخطة التعليمية)
@@ -457,27 +457,27 @@ export class DatabaseStorage implements IStorage {
     const actualDuration = Math.round(teachingTime);
 
     if (actualDuration >= scheduledDuration - 5 && actualDuration <= scheduledDuration + 10) {
-      timeScore += 0.5; evidence4.push(`استمرت الحصة ${actualDuration} د — ضمن الوقت المتوقع ${scheduledDuration} د`);
+      timeScore += 0.5; evidence4.push(`Session lasted ${actualDuration} min — within expected ${scheduledDuration} min`);
     } else if (actualDuration < scheduledDuration - 5) {
-      timeScore -= 0.5; evidence4.push(`الحصة ${actualDuration} د فقط — أقصر من المقرر ${scheduledDuration} د`);
+      timeScore -= 0.5; evidence4.push(`Session only ${actualDuration} min — shorter than scheduled ${scheduledDuration} min`);
     } else {
-      evidence4.push(`استمرت الحصة ${actualDuration} د مقابل المقرر ${scheduledDuration} د — تجاوز الوقت`);
+      evidence4.push(`Session lasted ${actualDuration} min vs scheduled ${scheduledDuration} min — exceeded time`);
     }
 
     if (totalTeacherTalkMin <= 15) {
-      timeScore += 0.5; evidence4.push(`حديث المعلم ${totalTeacherTalkMin} د — ضمن حد 15 د`);
+      timeScore += 0.5; evidence4.push(`Teacher talk ${totalTeacherTalkMin} min — within 15 min limit`);
     } else if (totalTeacherTalkMin <= 20) {
-      evidence4.push(`حديث المعلم ${totalTeacherTalkMin} د — أعلى قليلاً من هدف 15 د`);
+      evidence4.push(`Teacher talk ${totalTeacherTalkMin} min — slightly above 15 min target`);
     } else {
-      timeScore -= 0.5; evidence4.push(`حديث المعلم ${totalTeacherTalkMin} د — يتجاوز حد 15 د بشكل كبير`);
+      timeScore -= 0.5; evidence4.push(`Teacher talk ${totalTeacherTalkMin} min — significantly exceeds 15 min limit`);
     }
 
     if (studentActivePercent >= 60) {
-      timeScore += 0.5; evidence4.push(`${studentActivePercent}% من الوقت كان نشاطاً للطلاب — توازن ممتاز`);
+      timeScore += 0.5; evidence4.push(`${studentActivePercent}% of time was student activity — excellent balance`);
     } else if (studentActivePercent >= 45) {
-      evidence4.push(`${studentActivePercent}% وقت نشاط الطلاب`);
+      evidence4.push(`${studentActivePercent}% student activity time`);
     } else {
-      timeScore -= 0.5; evidence4.push(`فقط ${studentActivePercent}% وقت نشاط الطلاب — حصة يهيمن عليها المعلم`);
+      timeScore -= 0.5; evidence4.push(`Only ${studentActivePercent}% student activity time — teacher-dominated session`);
     }
 
     timeScore = Math.max(1, Math.min(5, Math.round(timeScore * 2) / 2));
@@ -488,10 +488,10 @@ export class DatabaseStorage implements IStorage {
       score: timeScore,
       evidence: evidence4,
       recommendations: timeScore < 4 ? [
-        totalTeacherTalkMin > 15 ? "قلل حديث المعلم لأقل من 15 د لإتاحة المزيد من وقت ممارسة الطلاب" : "",
-        studentActivePercent < 50 ? "زد وقت نشاط الطلاب — استهدف 50% على الأقل من الحصة" : "",
-      ].filter(Boolean) : ["إدارة الوقت متوازنة"],
-      notes: `حصة ${actualDuration} د، حديث ${totalTeacherTalkMin} د، ${studentActivePercent}% وقت الطلاب`,
+        totalTeacherTalkMin > 15 ? "Reduce teacher talk to under 15 min to allow more student practice time" : "",
+        studentActivePercent < 50 ? "Increase student activity time — aim for at least 50% of the session" : "",
+      ].filter(Boolean) : ["Time management is well-balanced"],
+      notes: `Session ${actualDuration} min, talk ${totalTeacherTalkMin} min, ${studentActivePercent}% student time`,
     });
 
     // 5. Session Pacing (الإلتزام بتصميم وخطة الدرس وتوزيع الوقت)
@@ -501,26 +501,26 @@ export class DatabaseStorage implements IStorage {
     const completedActivities = happenedActivities.length;
 
     if (completedActivities === totalActivities) {
-      paceScore += 0.5; evidence5.push(`جميع ${totalActivities} أنشطة مكتملة — تم تنفيذ خطة الدرس كاملة`);
+      paceScore += 0.5; evidence5.push(`All ${totalActivities} activities completed — lesson plan fully executed`);
     } else {
       const completionRate = Math.round((completedActivities / totalActivities) * 100);
-      if (completionRate >= 80) { evidence5.push(`${completedActivities}/${totalActivities} نشاط مكتمل (${completionRate}%)`); }
-      else { paceScore -= 0.5; evidence5.push(`فقط ${completedActivities}/${totalActivities} نشاط مكتمل (${completionRate}%) — لم تُنفذ خطة الدرس بالكامل`); }
+      if (completionRate >= 80) { evidence5.push(`${completedActivities}/${totalActivities} activities completed (${completionRate}%)`); }
+      else { paceScore -= 0.5; evidence5.push(`Only ${completedActivities}/${totalActivities} activities completed (${completionRate}%) — lesson plan not fully executed`); }
     }
 
     if (sessionCompletedPercent >= 80) {
-      paceScore += 0.5; evidence5.push(`معدل إكمال الحصة ${sessionCompletedPercent}% — الطلاب واكبوا`);
+      paceScore += 0.5; evidence5.push(`Session completion rate ${sessionCompletedPercent}% — students kept up`);
     } else if (sessionCompletedPercent >= 60) {
-      evidence5.push(`معدل إكمال الحصة ${sessionCompletedPercent}%`);
+      evidence5.push(`Session completion rate ${sessionCompletedPercent}%`);
     } else {
-      paceScore -= 0.5; evidence5.push(`فقط ${sessionCompletedPercent}% إكمال الحصة — قد يكون الإيقاع سريعاً جداً`);
+      paceScore -= 0.5; evidence5.push(`Only ${sessionCompletedPercent}% session completion — pacing may be too fast`);
     }
 
     const avgLearningTimeMin = Math.round(avgLearningTime * 10) / 10;
     if (avgLearningTimeMin >= teachingTime * 0.7) {
-      paceScore += 0.5; evidence5.push(`متوسط وقت تعلم الطلاب ${avgLearningTimeMin} د — إيقاع جيد`);
+      paceScore += 0.5; evidence5.push(`Average student learning time ${avgLearningTimeMin} min — good pacing`);
     } else {
-      evidence5.push(`متوسط وقت تعلم الطلاب ${avgLearningTimeMin} د من أصل ${Math.round(teachingTime)} د`);
+      evidence5.push(`Average student learning time ${avgLearningTimeMin} min out of ${Math.round(teachingTime)} min`);
     }
 
     paceScore = Math.max(1, Math.min(5, Math.round(paceScore * 2) / 2));
@@ -531,10 +531,10 @@ export class DatabaseStorage implements IStorage {
       score: paceScore,
       evidence: evidence5,
       recommendations: paceScore < 4 ? [
-        completedActivities < totalActivities ? "تأكد من إكمال جميع الأنشطة المخططة ضمن وقت الحصة" : "",
-        sessionCompletedPercent < 70 ? "أبطئ الإيقاع ليتمكن المزيد من الطلاب من المواكبة" : "",
-      ].filter(Boolean) : ["الإيقاع مضبوط بشكل جيد"],
-      notes: `${completedActivities}/${totalActivities} نشاط، ${sessionCompletedPercent}% إكمال، متوسط ${avgLearningTimeMin} د`,
+        completedActivities < totalActivities ? "Ensure all planned activities are completed within session time" : "",
+        sessionCompletedPercent < 70 ? "Slow down pacing so more students can keep up" : "",
+      ].filter(Boolean) : ["Pacing is well-calibrated"],
+      notes: `${completedActivities}/${totalActivities} activities, ${sessionCompletedPercent}% completion, avg ${avgLearningTimeMin} min`,
     });
 
     // 6. Mistakes & Impact (الاخطاء و تأثيرها على الدرس)
@@ -545,20 +545,20 @@ export class DatabaseStorage implements IStorage {
     const exitTicketInstance = exitTicketAnalysis?.instances?.[0];
     if (exitTicketInstance?.teacherTalkDuring) {
       mistakeScore -= 1;
-      evidence6.push(`كان المعلم يتحدث أثناء اختبار الفهم النهائي لمدة ${exitTicketInstance.teacherTalkOverlapMin} د — يجب أن يجيب الطلاب بشكل مستقل`);
+      evidence6.push(`The teacher was talking during the exit ticket for ${exitTicketInstance.teacherTalkOverlapMin} min — students should answer independently`);
     } else {
-      evidence6.push("لم يتحدث المعلم أثناء اختبار الفهم النهائي — تم اتباع البروتوكول الصحيح");
+      evidence6.push("The teacher did not talk during the exit ticket — correct protocol followed");
     }
 
     const tmImprovements = feedback.needsImprovement.filter((f: any) => f.category === 'time_management');
     if (tmImprovements.length >= 3) {
       mistakeScore -= 0.5;
-      evidence6.push(`تم تحديد ${tmImprovements.length} مشاكل في إدارة الوقت — نمط متكرر`);
+      evidence6.push(`${tmImprovements.length} time management issues identified — recurring pattern`);
     } else if (tmImprovements.length > 0) {
-      evidence6.push(`${tmImprovements.length} مشكلة بسيطة في إدارة الوقت`);
+      evidence6.push(`${tmImprovements.length} minor time management issues`);
     } else {
       mistakeScore += 0.5;
-      evidence6.push("لم يتم اكتشاف أخطاء كبيرة في إدارة الوقت");
+      evidence6.push("No major time management errors detected");
     }
 
     mistakeScore = Math.max(1, Math.min(5, Math.round(mistakeScore * 2) / 2));
@@ -569,12 +569,12 @@ export class DatabaseStorage implements IStorage {
       score: mistakeScore,
       evidence: evidence6,
       recommendations: mistakeScore < 4 ? [
-        exitTicketInstance?.teacherTalkDuring ? "لا تتحدث أثناء اختبار الفهم النهائي — دع الطلاب يجيبون بشكل مستقل" : "",
-        tmImprovements.length > 0 ? "راجع توزيع الوقت بعد كل نشاط بناءً على نسبة صحة الطلاب" : "",
-      ].filter(Boolean) : ["لم يتم اكتشاف أخطاء كبيرة"],
+        exitTicketInstance?.teacherTalkDuring ? "Do not talk during the exit ticket — let students answer independently" : "",
+        tmImprovements.length > 0 ? "Review time allocation after each activity based on student correctness rate" : "",
+      ].filter(Boolean) : ["No major errors detected"],
       notes: exitTicketInstance?.teacherTalkDuring
-        ? `تحدث المعلم ${exitTicketInstance.teacherTalkOverlapMin} د أثناء اختبار الفهم النهائي`
-        : "تم اتباع بروتوكول اختبار الفهم النهائي بشكل صحيح",
+        ? `Teacher talked ${exitTicketInstance.teacherTalkOverlapMin} min during exit ticket`
+        : "Exit ticket protocol followed correctly",
     });
 
     // 7. Distinct Moments (لحظات تميّز من الأستاذ)
@@ -582,18 +582,18 @@ export class DatabaseStorage implements IStorage {
     const evidence7: string[] = [];
     const wellCount = feedback.wentWell.length;
 
-    if (wellCount >= 5) { distinctScore += 1; evidence7.push(`تم تحديد ${wellCount} ملاحظة إيجابية — الحصة كانت بها لحظات قوية كثيرة`); }
-    else if (wellCount >= 3) { distinctScore += 0.5; evidence7.push(`${wellCount} ملاحظة إيجابية`); }
-    else { evidence7.push(`فقط ${wellCount} ملاحظة إيجابية — لحظات تميز قليلة`); }
+    if (wellCount >= 5) { distinctScore += 1; evidence7.push(`${wellCount} positive observations identified — the session had many strong moments`); }
+    else if (wellCount >= 3) { distinctScore += 0.5; evidence7.push(`${wellCount} positive observations`); }
+    else { evidence7.push(`Only ${wellCount} positive observations — few distinct moments`); }
 
     const bestQuestion = (pollStats.byQuestion || []).reduce((best: any, q: any) => (!best || q.percent > best.percent) ? q : best, null);
     if (bestQuestion && bestQuestion.percent >= 75) {
       distinctScore += 0.5;
-      evidence7.push(`أقوى سؤال حقق ${bestQuestion.percent}% صحة — تدريس فعال لهذا المفهوم`);
+      evidence7.push(`Strongest question achieved ${bestQuestion.percent}% correctness — effective teaching for this concept`);
     }
 
     if (sessionTemperature >= 80 && positivePercent >= 80) {
-      evidence7.push(`حرارة عالية (${sessionTemperature}%) مع ${positivePercent}% مشاعر إيجابية — الطلاب كانوا متحمسين`);
+      evidence7.push(`High temperature (${sessionTemperature}%) with ${positivePercent}% positive sentiment — students were enthusiastic`);
     }
 
     distinctScore = Math.max(1, Math.min(5, Math.round(distinctScore * 2) / 2));
@@ -604,10 +604,10 @@ export class DatabaseStorage implements IStorage {
       score: distinctScore,
       evidence: evidence7,
       recommendations: distinctScore < 4 ? [
-        "اصنع لحظات تعلم لا تُنسى من خلال القصص أو الربط بالواقع",
-        "احتفل بنجاحات الطلاب علناً لتعزيز الدافعية",
-      ] : ["استمر في صنع لحظات تدريس مؤثرة"],
-      notes: `${wellCount} ملاحظة إيجابية، أفضل سؤال بنسبة ${bestQuestion?.percent || 0}%`,
+        "Create memorable learning moments through stories or real-world connections",
+        "Celebrate student successes publicly to boost motivation",
+      ] : ["Continue creating impactful teaching moments"],
+      notes: `${wellCount} positive observations, best question at ${bestQuestion?.percent || 0}%`,
     });
 
     // 8. Overall Rating (التقييم العام والجودة للحصة والمدرس)
@@ -615,16 +615,16 @@ export class DatabaseStorage implements IStorage {
     const overallScore = Math.max(1, Math.min(5, avgOfAll));
     const evidence8: string[] = [];
 
-    if (overallScore >= 4) { evidence8.push("حصة قوية بشكل عام — معظم المعايير تم تحقيقها أو تجاوزها"); }
-    else if (overallScore >= 3) { evidence8.push("حصة مقبولة مع مجال للتحسين في مجالات محددة"); }
-    else { evidence8.push("الحصة تحتاج تحسيناً كبيراً في عدة معايير"); }
+    if (overallScore >= 4) { evidence8.push("Strong session overall — most criteria met or exceeded"); }
+    else if (overallScore >= 3) { evidence8.push("Acceptable session with room for improvement in specific areas"); }
+    else { evidence8.push("The session needs significant improvement across multiple criteria"); }
 
-    evidence8.push(`المتوسط المرجح عبر 7 معايير: ${overallScore}/5`);
+    evidence8.push(`Weighted average across 7 criteria: ${overallScore}/5`);
 
-    const strongAreas = criteria.filter((c: any) => c.score >= 4).map((c: any) => c.nameAr);
-    const weakAreas = criteria.filter((c: any) => c.score < 3).map((c: any) => c.nameAr);
-    if (strongAreas.length > 0) evidence8.push(`نقاط القوة: ${strongAreas.join('، ')}`);
-    if (weakAreas.length > 0) evidence8.push(`مجالات التحسين: ${weakAreas.join('، ')}`);
+    const strongAreas = criteria.filter((c: any) => c.score >= 4).map((c: any) => c.nameEn);
+    const weakAreas = criteria.filter((c: any) => c.score < 3).map((c: any) => c.nameEn);
+    if (strongAreas.length > 0) evidence8.push(`Strengths: ${strongAreas.join(', ')}`);
+    if (weakAreas.length > 0) evidence8.push(`Areas for improvement: ${weakAreas.join(', ')}`);
 
     criteria.push({
       id: 8,
@@ -633,33 +633,33 @@ export class DatabaseStorage implements IStorage {
       score: overallScore,
       evidence: evidence8,
       recommendations: weakAreas.length > 0
-        ? [`ركز على تحسين: ${weakAreas.join('، ')}`, "راجع تسجيل الحصة وقارنها بمعايير التقييم"]
-        : ["استمر في الحفاظ على الجودة العالية في جميع المعايير"],
-      notes: `المتوسط: ${overallScore}/5 | قوي: ${strongAreas.length} | ضعيف: ${weakAreas.length}`,
+        ? [`Focus on improving: ${weakAreas.join(', ')}`, "Review session recording and compare against evaluation criteria"]
+        : ["Continue maintaining high quality across all criteria"],
+      notes: `Average: ${overallScore}/5 | Strong: ${strongAreas.length} | Weak: ${weakAreas.length}`,
     });
 
     // 9. Session Objectives (قياس مدى تحقيق أهداف الحصة)
     let objScore = 3;
     const evidence9: string[] = [];
 
-    if (overallCorrectness >= 70) { objScore += 0.5; evidence9.push(`نسبة الإجابات الصحيحة ${overallCorrectness}% — تم تحقيق أهداف التعلم بشكل كبير`); }
-    else if (overallCorrectness >= 50) { evidence9.push(`نسبة الإجابات الصحيحة ${overallCorrectness}% — تم تحقيقها جزئياً`); }
-    else { objScore -= 0.5; evidence9.push(`نسبة الإجابات الصحيحة ${overallCorrectness}% — لم تتحقق الأهداف بشكل كافٍ`); }
+    if (overallCorrectness >= 70) { objScore += 0.5; evidence9.push(`Overall correctness ${overallCorrectness}% — learning objectives largely achieved`); }
+    else if (overallCorrectness >= 50) { evidence9.push(`Overall correctness ${overallCorrectness}% — partially achieved`); }
+    else { objScore -= 0.5; evidence9.push(`Overall correctness ${overallCorrectness}% — objectives not sufficiently achieved`); }
 
-    if (sessionCompletedPercent >= 80) { objScore += 0.5; evidence9.push(`إكمال الحصة ${sessionCompletedPercent}% — معظم الطلاب بقوا متفاعلين`); }
-    else if (sessionCompletedPercent < 60) { objScore -= 0.5; evidence9.push(`فقط ${sessionCompletedPercent}% إكمال الحصة — كثير من الطلاب فقدوا التفاعل`); }
+    if (sessionCompletedPercent >= 80) { objScore += 0.5; evidence9.push(`Session completion ${sessionCompletedPercent}% — most students stayed engaged`); }
+    else if (sessionCompletedPercent < 60) { objScore -= 0.5; evidence9.push(`Only ${sessionCompletedPercent}% session completion — many students lost engagement`); }
 
     if (completedActivities === totalActivities) {
-      objScore += 0.5; evidence9.push("تم إكمال جميع الأنشطة المخططة");
+      objScore += 0.5; evidence9.push("All planned activities were completed");
     } else {
-      evidence9.push(`${completedActivities}/${totalActivities} نشاط مكتمل`);
+      evidence9.push(`${completedActivities}/${totalActivities} activities completed`);
     }
 
     const exitTicketCorrectness = exitTicketInstance?.overallCorrectness?.percent;
     if (exitTicketCorrectness != null) {
-      if (exitTicketCorrectness >= 70) { objScore += 0.5; evidence9.push(`صحة اختبار الفهم النهائي ${exitTicketCorrectness}% — تقييم نهائي قوي`); }
-      else if (exitTicketCorrectness >= 50) { evidence9.push(`صحة اختبار الفهم النهائي ${exitTicketCorrectness}%`); }
-      else { objScore -= 0.5; evidence9.push(`صحة اختبار الفهم النهائي ${exitTicketCorrectness}% فقط — لم تتثبت الأهداف بنهاية الحصة`); }
+      if (exitTicketCorrectness >= 70) { objScore += 0.5; evidence9.push(`Exit ticket correctness ${exitTicketCorrectness}% — strong final assessment`); }
+      else if (exitTicketCorrectness >= 50) { evidence9.push(`Exit ticket correctness ${exitTicketCorrectness}%`); }
+      else { objScore -= 0.5; evidence9.push(`Exit ticket correctness only ${exitTicketCorrectness}% — objectives not solidified by end of session`); }
     }
 
     objScore = Math.max(1, Math.min(5, Math.round(objScore * 2) / 2));
@@ -670,10 +670,10 @@ export class DatabaseStorage implements IStorage {
       score: objScore,
       evidence: evidence9,
       recommendations: objScore < 4 ? [
-        overallCorrectness < 60 ? "راجع الأهداف التي لم تتحقق وخطط للمعالجة في الحصة القادمة" : "",
-        exitTicketCorrectness != null && exitTicketCorrectness < 60 ? "استخدم نتائج اختبار الفهم النهائي للتخطيط للمراجعة في بداية الحصة القادمة" : "",
-      ].filter(Boolean) : ["تم تحقيق أهداف التعلم بنجاح"],
-      notes: `الصحة: ${overallCorrectness}%، الإكمال: ${sessionCompletedPercent}%، اختبار الفهم النهائي: ${exitTicketCorrectness ?? 'غ/م'}%`,
+        overallCorrectness < 60 ? "Review unmet objectives and plan remediation for the next session" : "",
+        exitTicketCorrectness != null && exitTicketCorrectness < 60 ? "Use exit ticket results to plan review at the start of the next session" : "",
+      ].filter(Boolean) : ["Learning objectives achieved successfully"],
+      notes: `Correctness: ${overallCorrectness}%, Completion: ${sessionCompletedPercent}%, Exit ticket: ${exitTicketCorrectness ?? 'N/A'}%`,
     });
 
     const overallAvg = Math.round(criteria.reduce((s: number, c: any) => s + c.score, 0) / criteria.length * 10) / 10;
@@ -691,7 +691,7 @@ export class DatabaseStorage implements IStorage {
         teacherTalkMin: totalTeacherTalkMin,
         studentActivePercent,
         activitiesCompleted: `${completedActivities}/${totalActivities}`,
-        chatParticipation: `${uniqueChatStudents}/${totalStudents} طالب`,
+        chatParticipation: `${uniqueChatStudents}/${totalStudents} students`,
       },
     };
   }
@@ -732,9 +732,9 @@ export class DatabaseStorage implements IStorage {
       }
 
       const pluralLabels: Record<string, string> = {
-        SECTION_CHECK: "اختبارات الفهم",
-        TEAM_EXERCISE: "تمرين جماعي",
-        EXIT_TICKET: "اختبار الفهم النهائي",
+        SECTION_CHECK: "Section Checks",
+        TEAM_EXERCISE: "Team Exercise",
+        EXIT_TICKET: "Exit Ticket",
       };
       const typeLabel = pluralLabels[actType] || actType;
 
@@ -789,24 +789,24 @@ export class DatabaseStorage implements IStorage {
     const lowQs = allQuestions.filter(q => q.percent < 40);
     const highQs = allQuestions.filter(q => q.percent >= 80);
     if (lowQs.length > 0) {
-      insights.push(`${lowQs.length} من أصل ${allQuestions.length} سؤال كانت نسبة صحتها منخفضة جداً (أقل من 40%) — هذه المواضيع تحتاج إعادة شرح.`);
+      insights.push(`${lowQs.length} out of ${allQuestions.length} questions had very low correctness (below 40%) — these topics need re-explanation.`);
     }
 
     const avgCompletionRate = count > 0
       ? Math.round(instances.reduce((s, i) => s + (i.studentsWhoAnswered / totalStudents * 100), 0) / count)
       : 0;
     if (avgCompletionRate < 80) {
-      insights.push(`متوسط إكمال أسئلة اختبار الفهم وصل ${avgCompletionRate}% — مما يشير إلى ضيق الوقت لدى بعض الطلاب.`);
+      insights.push(`Average section check completion rate was ${avgCompletionRate}% — indicating some students ran out of time.`);
     }
 
     const teacherTalkInstances = instances.filter(i => i.teacherTalkDuring);
     if (teacherTalkInstances.length > 0) {
       const totalOverlap = Math.round(teacherTalkInstances.reduce((s, i) => s + i.teacherTalkOverlapMin, 0) * 10) / 10;
-      insights.push(`كان المعلم يتحدث خلال ${teacherTalkInstances.length} من ${count} اختبار فهم (${totalOverlap} د إجمالاً).`);
+      insights.push(`The teacher was talking during ${teacherTalkInstances.length} out of ${count} section checks (${totalOverlap} min total).`);
     }
 
     if (avgCorrectness < 50) {
-      insights.push(`نسبة الإجابات الصحيحة عبر جميع اختبارات الفهم منخفضة عند ${avgCorrectness}% — قد يحتاج المحتوى أو أسلوب الشرح لمراجعة.`);
+      insights.push(`Overall correctness across all section checks is low at ${avgCorrectness}% — content or teaching approach may need review.`);
     }
 
     return {
@@ -881,18 +881,18 @@ export class DatabaseStorage implements IStorage {
       if (notAnswered > 0 && q.seen > 0) {
         const skipPercent = Math.round((notAnswered / q.seen) * 100);
         if (skipPercent >= 20) {
-          insights.push(`${notAnswered} طالب (${skipPercent}%) شاهدوا السؤال ولم يجيبوا — قد يكون السؤال صعباً أو مربكاً.`);
+          insights.push(`${notAnswered} students (${skipPercent}%) saw the question but didn't answer — the question may be too difficult or confusing.`);
         }
       }
 
       if (percent >= 80) {
-        insights.push(`نتيجة قوية — معظم الطلاب فهموا هذا المفهوم جيداً.`);
+        insights.push(`Strong result — most students understood this concept well.`);
       } else if (percent >= 60) {
-        insights.push(`مقبول لكن بعض الطلاب واجهوا صعوبة — قد يحتاج مراجعة سريعة في الحصة القادمة.`);
+        insights.push(`Acceptable, but some students struggled — may need a quick review next session.`);
       } else if (percent >= 40) {
-        insights.push(`نسبة صحة منخفضة — هذا الموضوع يحتاج شرحاً إضافياً أو إعادة تدريس في الحصة القادمة.`);
+        insights.push(`Low correctness — this topic needs additional explanation or re-teaching next session.`);
       } else if (q.answered > 0) {
-        insights.push(`نسبة صحة منخفضة جداً — المفهوم لم يُفهم من الأغلبية. قد يكون الشرح مربكاً أو قصيراً جداً قبل النشاط.`);
+        insights.push(`Very low correctness — the concept was not understood by the majority. The explanation may have been confusing or too brief before the activity.`);
       }
 
       return {
@@ -943,26 +943,26 @@ export class DatabaseStorage implements IStorage {
     const overallInsights: string[] = [];
 
     if (act.activityType === 'EXIT_TICKET' && teacherTalkDuring) {
-      overallInsights.push(`كان المعلم يتحدث لمدة ${teacherTalkOverlapMin} د أثناء اختبار الفهم النهائي، يناقش: ${teacherTalkTopics}. يجب إكمال اختبار الفهم النهائي بشكل مستقل لقياس الفهم بدقة.`);
+      overallInsights.push(`The teacher was talking for ${teacherTalkOverlapMin} min during the exit ticket, discussing: ${teacherTalkTopics}. The exit ticket should be completed independently to accurately measure comprehension.`);
     }
 
     const overallPercent = act.correctness?.percent ?? 0;
     if (overallPercent < 50 && overallPercent > 0) {
-      overallInsights.push(`نسبة الصحة الإجمالية منخفضة عند ${overallPercent}% — قد يحتاج المحتوى لمراجعة أو شرح مختلف.`);
+      overallInsights.push(`Overall correctness is low at ${overallPercent}% — content may need review or different explanation.`);
     }
 
     const durationMin = act.durationMin || 0;
     const plannedMin = act.plannedDurationMin || 0;
 
     if (plannedMin > 0 && durationMin < plannedMin * 0.7) {
-      overallInsights.push(`النشاط كان أقصر من المخطط (${durationMin} د مقابل ${plannedMin} د مخطط) — قلة الوقت قد تفسر الإجابات غير المكتملة.`);
+      overallInsights.push(`Activity was shorter than planned (${durationMin} min vs ${plannedMin} min planned) — insufficient time may explain incomplete answers.`);
     } else if (plannedMin > 0 && durationMin > plannedMin * 1.3) {
-      overallInsights.push(`النشاط استمر أطول من المخطط (${durationMin} د مقابل ${plannedMin} د مخطط) — قد يكون الطلاب احتاجوا وقتاً أكثر.`);
+      overallInsights.push(`Activity ran longer than planned (${durationMin} min vs ${plannedMin} min planned) — students may have needed more time.`);
     }
 
     const completionRate = totalStudents > 0 ? Math.round((totalAnswered / totalStudents) * 100) : 0;
     if (completionRate < 80) {
-      overallInsights.push(`فقط ${completionRate}% من الطلاب أكملوا هذا النشاط — بعضهم قد نفد وقتهم أو فقدوا التفاعل.`);
+      overallInsights.push(`Only ${completionRate}% of students completed this activity — some may have run out of time or lost engagement.`);
     }
 
     if (etStartSec !== null && etEndSec !== null) {
@@ -982,13 +982,13 @@ export class DatabaseStorage implements IStorage {
         return !hasTeacherReply;
       });
       if (unansweredChats.length >= 3) {
-        overallInsights.push(`${unansweredChats.length} رسالة من الطلاب أثناء هذا النشاط لم يتم الرد عليها — قد يكون الطلاب يطلبون توضيحاً.`);
+        overallInsights.push(`${unansweredChats.length} student messages during this activity went unanswered — students may be seeking clarification.`);
       }
     }
 
     const highCorrectQs = questions.filter(q => q.percent >= 80);
     if (highCorrectQs.length > 0 && teacherTalkDuring && act.activityType === 'EXIT_TICKET') {
-      overallInsights.push(`${highCorrectQs.length} سؤال حققوا نسبة صحة عالية (80%+)، ومع ذلك كان المعلم لا يزال يتحدث أثناء اختبار الفهم النهائي.`);
+      overallInsights.push(`${highCorrectQs.length} questions achieved high correctness (80%+), yet the teacher was still talking during the exit ticket.`);
     }
 
     return {
@@ -1079,12 +1079,12 @@ export class DatabaseStorage implements IStorage {
 
       const calledStudentOnStage = postActivityTranscripts.some(t => stagePatterns.test(t.text));
 
-      const typeNameAr: Record<string, string> = {
-        SECTION_CHECK: "اختبار الفهم",
-        EXIT_TICKET: "اختبار الفهم النهائي",
-        TEAM_EXERCISE: "تمرين جماعي",
+      const typeNameEn: Record<string, string> = {
+        SECTION_CHECK: "Section Check",
+        EXIT_TICKET: "Exit Ticket",
+        TEAM_EXERCISE: "Team Exercise",
       };
-      const actLabel = `${typeNameAr[act.activityType] || act.activityType} (${correctPercent}% صحة)`;
+      const actLabel = `${typeNameEn[act.activityType] || act.activityType} (${correctPercent}% correctness)`;
       const explanationMin = this.toMin(explanationTimeSec);
 
       if (correctPercent > 75) {
@@ -1093,16 +1093,16 @@ export class DatabaseStorage implements IStorage {
             category: "time_management",
             activityId: act.activityId,
             activity: actLabel,
-            detail: `قضى المعلم ${explanationMin} د في الشرح بعد هذا النشاط — مناسب حيث أن ${correctPercent}% من الطلاب أجابوا بشكل صحيح.`,
+            detail: `The teacher spent ${explanationMin} min explaining after this activity — appropriate since ${correctPercent}% of students answered correctly.`,
           });
         } else {
           needsImprovement.push({
             category: "time_management",
             activityId: act.activityId,
             activity: actLabel,
-            detail: `قضى المعلم ${explanationMin} د في الشرح بعد هذا النشاط، لكن ${correctPercent}% من الطلاب أجابوا بشكل صحيح بالفعل. يجب الانتقال بسرعة.`,
-            recommended: "< 0.3 د",
-            actual: `${explanationMin} د`,
+            detail: `The teacher spent ${explanationMin} min explaining after this activity, but ${correctPercent}% of students already answered correctly. Should move on quickly.`,
+            recommended: "< 0.3 min",
+            actual: `${explanationMin} min`,
           });
         }
 
@@ -1111,14 +1111,14 @@ export class DatabaseStorage implements IStorage {
             category: "student_stage",
             activityId: act.activityId,
             activity: actLabel,
-            detail: `تم استدعاء طالب للشرح، لكن ${correctPercent}% أجابوا بشكل صحيح بالفعل — غير ضروري عندما يكون المتوسط فوق 75%.`,
+            detail: `A student was called to explain, but ${correctPercent}% already answered correctly — unnecessary when average is above 75%.`,
           });
         } else {
           wentWell.push({
             category: "student_stage",
             activityId: act.activityId,
             activity: actLabel,
-            detail: `لم يستدعِ المعلم طالباً للشرح — قرار صائب حيث أن ${correctPercent}% أجابوا بشكل صحيح.`,
+            detail: `The teacher did not call a student to explain — correct decision since ${correctPercent}% answered correctly.`,
           });
         }
       } else if (correctPercent >= 50) {
@@ -1127,25 +1127,25 @@ export class DatabaseStorage implements IStorage {
             category: "time_management",
             activityId: act.activityId,
             activity: actLabel,
-            detail: `قضى المعلم ${explanationMin} د في الشرح بعد هذا النشاط — مناسب لنسبة صحة ${correctPercent}%.`,
+            detail: `The teacher spent ${explanationMin} min explaining after this activity — appropriate for ${correctPercent}% correctness.`,
           });
         } else if (explanationTimeSec < 30) {
           needsImprovement.push({
             category: "time_management",
             activityId: act.activityId,
             activity: actLabel,
-            detail: `قضى المعلم ${explanationMin} د فقط في الشرح بعد هذا النشاط، لكن نسبة صحة ${correctPercent}% تقترح أن 0.5–1 د من الشرح سيكون مناسباً.`,
-            recommended: "0.5–1 د",
-            actual: `${explanationMin} د`,
+            detail: `The teacher spent only ${explanationMin} min explaining after this activity, but ${correctPercent}% correctness suggests 0.5–1 min of explanation would be appropriate.`,
+            recommended: "0.5–1 min",
+            actual: `${explanationMin} min`,
           });
         } else {
           needsImprovement.push({
             category: "time_management",
             activityId: act.activityId,
             activity: actLabel,
-            detail: `قضى المعلم ${explanationMin} د في الشرح بعد هذا النشاط. مع نسبة صحة ${correctPercent}%، 0.5–1 د سيكون كافياً.`,
-            recommended: "0.5–1 د",
-            actual: `${explanationMin} د`,
+            detail: `The teacher spent ${explanationMin} min explaining after this activity. With ${correctPercent}% correctness, 0.5–1 min would be sufficient.`,
+            recommended: "0.5–1 min",
+            actual: `${explanationMin} min`,
           });
         }
       } else {
@@ -1154,23 +1154,23 @@ export class DatabaseStorage implements IStorage {
             category: "time_management",
             activityId: act.activityId,
             activity: actLabel,
-            detail: `قضى المعلم ${explanationMin} د في الشرح بعد هذا النشاط — مناسب لنسبة الصحة المنخفضة ${correctPercent}%.`,
+            detail: `The teacher spent ${explanationMin} min explaining after this activity — appropriate for low correctness of ${correctPercent}%.`,
           });
         } else if (explanationTimeSec < 60) {
           needsImprovement.push({
             category: "time_management",
             activityId: act.activityId,
             activity: actLabel,
-            detail: `قضى المعلم ${explanationMin} د فقط في الشرح بعد هذا النشاط، لكن فقط ${correctPercent}% أجابوا بشكل صحيح. يجب قضاء حتى دقيقتين لضمان الفهم.`,
-            recommended: "1–2 د",
-            actual: `${explanationMin} د`,
+            detail: `The teacher spent only ${explanationMin} min explaining after this activity, but only ${correctPercent}% answered correctly. Should spend up to 2 minutes to ensure comprehension.`,
+            recommended: "1–2 min",
+            actual: `${explanationMin} min`,
           });
         } else {
           wentWell.push({
             category: "time_management",
             activityId: act.activityId,
             activity: actLabel,
-            detail: `قضى المعلم ${explanationMin} د في الشرح بعد هذا النشاط — شرح شامل ومناسب حيث أن فقط ${correctPercent}% أجابوا بشكل صحيح.`,
+            detail: `The teacher spent ${explanationMin} min explaining after this activity — thorough and appropriate explanation since only ${correctPercent}% answered correctly.`,
           });
         }
       }
@@ -1183,22 +1183,22 @@ export class DatabaseStorage implements IStorage {
 
   private extractTopics(texts: string[]): string {
     const topicMap: [RegExp, string][] = [
-      [/الدائر[ةه]/i, "الدوائر"],
-      [/المستقيم|مستقيمات/i, "المستقيمات في الدوائر"],
-      [/نصف القطر|أنصاف.*القطر/i, "نصف القطر"],
-      [/القطر/i, "القطر"],
-      [/الوتر|وتر/i, "الوتر"],
-      [/مماس|التماس/i, "المماس"],
-      [/الزاوي[ةه]\s*المركزي[ةه]/i, "الزوايا المركزية"],
-      [/الزاوي[ةه]\s*المحيطي[ةه]/i, "الزوايا المحيطية"],
-      [/الزوايا|زاوي[ةه]/i, "الزوايا"],
-      [/المحيط/i, "المحيط"],
-      [/المساح[ةه]/i, "المساحة"],
-      [/المضلع|مضلعات|رباعي/i, "المضلعات"],
-      [/القوس/i, "القوس"],
-      [/طاء.*نق|نق\s*تربيع/i, "قوانين الدائرة"],
-      [/مربع|مثلث|سداسي/i, "الأشكال داخل الدوائر"],
-      [/اشرح|اشرحي|يلا.*اشرح/i, "استدعاء طالب للشرح"],
+      [/الدائر[ةه]/i, "Circles"],
+      [/المستقيم|مستقيمات/i, "Lines in circles"],
+      [/نصف القطر|أنصاف.*القطر/i, "Radius"],
+      [/القطر/i, "Diameter"],
+      [/الوتر|وتر/i, "Chord"],
+      [/مماس|التماس/i, "Tangent"],
+      [/الزاوي[ةه]\s*المركزي[ةه]/i, "Central angles"],
+      [/الزاوي[ةه]\s*المحيطي[ةه]/i, "Inscribed angles"],
+      [/الزوايا|زاوي[ةه]/i, "Angles"],
+      [/المحيط/i, "Perimeter"],
+      [/المساح[ةه]/i, "Area"],
+      [/المضلع|مضلعات|رباعي/i, "Polygons"],
+      [/القوس/i, "Arc"],
+      [/طاء.*نق|نق\s*تربيع/i, "Circle formulas"],
+      [/مربع|مثلث|سداسي/i, "Shapes in circles"],
+      [/اشرح|اشرحي|يلا.*اشرح/i, "Student called to explain"],
     ];
 
     const combined = texts.join(' ');
@@ -1208,7 +1208,7 @@ export class DatabaseStorage implements IStorage {
         found.push(label);
       }
     }
-    return found.length > 0 ? found.join(', ') : "تدريس عام";
+    return found.length > 0 ? found.join(', ') : "General teaching";
   }
 
   private detectChatConfusion(chats: SessionChat[], startSec: number, endSec: number): { confused: boolean; examples: string[] } {
@@ -1229,7 +1229,7 @@ export class DatabaseStorage implements IStorage {
       if (confusionPatterns.test(text) || frustrationPatterns.test(text)) {
         confused = true;
         if (examples.length < 3) {
-          examples.push(`"${text.substring(0, 50)}" — ${chat.creatorName || 'طالب'}`);
+          examples.push(`"${text.substring(0, 50)}" — ${chat.creatorName || 'student'}`);
         }
       }
     }
@@ -1302,22 +1302,22 @@ export class DatabaseStorage implements IStorage {
 
       const chatContext = this.detectChatConfusion(chats, seg.startSec, seg.endSec);
 
-      let context = `${formatTime(seg.startSec)}–${formatTime(seg.endSec)} (${durationMin} د): المعلم كان يناقش ${topics}.`;
+      let context = `${formatTime(seg.startSec)}–${formatTime(seg.endSec)} (${durationMin} min): The teacher was discussing ${topics}.`;
 
       if (nearbyActivities.length > 0) {
         const actDetails = nearbyActivities.map(a => {
           const pct = a.correctness?.percent ?? 0;
-          return `${a.activityType} سجل ${pct}% صحة`;
+          return `${a.activityType} scored ${pct}% correctness`;
         });
         if (nearbyActivities.some(a => (a.correctness?.percent ?? 100) < 50)) {
-          context += ` هذا جاء بعد نشاط بنسبة صحة منخفضة (${actDetails.join('؛ ')}) — المعلم كان على الأرجح يعيد شرح المفهوم.`;
+          context += ` This came after an activity with low correctness (${actDetails.join('; ')}) — the teacher was likely re-explaining the concept.`;
         } else {
-          context += ` بالقرب من نشاط: ${actDetails.join('؛ ')}.`;
+          context += ` Near activity: ${actDetails.join('; ')}.`;
         }
       }
 
       if (chatContext.confused) {
-        context += ` أظهر الطلاب ارتباكاً في المحادثة: ${chatContext.examples.join('؛ ')}.`;
+        context += ` Students showed confusion in chat: ${chatContext.examples.join('; ')}.`;
       }
 
       segmentDetails.push(context);
@@ -1326,18 +1326,18 @@ export class DatabaseStorage implements IStorage {
     if (longSegments.length === 0) {
       wentWell.push({
         category: "pedagogy",
-        activity: "الحديث المستمر",
-        detail: `حافظ المعلم على جميع مقاطع الحديث أقل من دقيقتين — إيقاع جيد يسمح للطلاب بالبقاء متفاعلين. أطول مقطع مستمر كان ${Math.round(Math.max(...continuousSegments.map(s => s.durationSec)))} ثانية.`,
+        activity: "Continuous talk",
+        detail: `The teacher kept all talk segments under 2 minutes — good pacing that allows students to stay engaged. The longest continuous segment was ${Math.round(Math.max(...continuousSegments.map(s => s.durationSec)))} seconds.`,
       });
     } else {
       const longestSeg = longSegments.reduce((a, b) => a.durationSec > b.durationSec ? a : b);
       const longestMin = Math.round(longestSeg.durationSec / 60 * 10) / 10;
       needsImprovement.push({
         category: "pedagogy",
-        activity: "الحديث المستمر",
-        detail: `المعلم كان لديه ${longSegments.length} فترة حديث متواصل تجاوزت دقيقتين. أطول فترة كانت ${longestMin} د (${formatTime(longestSeg.startSec)}–${formatTime(longestSeg.endSec)}). قسّم الفترات الطويلة بأسئلة أو تفاعل مع الطلاب.`,
-        recommended: "أقل من دقيقتين لكل فترة",
-        actual: `${longestMin} د أطول فترة`,
+        activity: "Continuous talk",
+        detail: `The teacher had ${longSegments.length} continuous talk periods exceeding 2 minutes. The longest was ${longestMin} min (${formatTime(longestSeg.startSec)}–${formatTime(longestSeg.endSec)}). Break long periods with questions or student interaction.`,
+        recommended: "Under 2 minutes per segment",
+        actual: `${longestMin} min longest segment`,
         segments: segmentDetails,
       });
     }
@@ -1347,16 +1347,16 @@ export class DatabaseStorage implements IStorage {
     if (totalTeacherTalkMin <= MAX_TOTAL_TALK_MIN) {
       wentWell.push({
         category: "pedagogy",
-        activity: "إجمالي حديث المعلم",
-        detail: `إجمالي وقت حديث المعلم كان ${totalTeacherTalkMin} د من أصل ${sessionDurationMin} د حصة — ضمن الحد الموصى به 15 دقيقة. هذا يترك وقتاً كافياً لأنشطة الطلاب.`,
+        activity: "Total teacher talk",
+        detail: `Total teacher talk time was ${totalTeacherTalkMin} min out of ${sessionDurationMin} min session — within the recommended 15 minute limit. This leaves sufficient time for student activities.`,
       });
     } else {
       needsImprovement.push({
         category: "pedagogy",
-        activity: "إجمالي حديث المعلم",
-        detail: `إجمالي وقت حديث المعلم كان ${totalTeacherTalkMin} د من أصل ${sessionDurationMin} د حصة. من الأفضل أن يكون حديث المعلم أقل من 15 دقيقة لإتاحة غالبية الحصة للتعلم النشط للطلاب.`,
-        recommended: "أقل من 15 د",
-        actual: `${totalTeacherTalkMin} د`,
+        activity: "Total teacher talk",
+        detail: `Total teacher talk time was ${totalTeacherTalkMin} min out of ${sessionDurationMin} min session. Teacher talk should ideally be under 15 minutes to allow the majority of the session for active student learning.`,
+        recommended: "Under 15 min",
+        actual: `${totalTeacherTalkMin} min`,
       });
     }
 
@@ -1366,16 +1366,16 @@ export class DatabaseStorage implements IStorage {
     if (studentActivePercent > 50) {
       wentWell.push({
         category: "pedagogy",
-        activity: "وقت نشاط الطلاب",
-        detail: `حصل الطلاب على ${studentActiveMin} د (${studentActivePercent}%) من الوقت النشط مقابل ${totalTeacherTalkMin} د حديث المعلم — غالبية الحصة كانت محورها الطالب.`,
+        activity: "Student active time",
+        detail: `Students had ${studentActiveMin} min (${studentActivePercent}%) of active time vs ${totalTeacherTalkMin} min teacher talk — the majority of the session was student-centered.`,
       });
     } else {
       needsImprovement.push({
         category: "pedagogy",
-        activity: "وقت نشاط الطلاب",
-        detail: `حصل الطلاب على ${studentActiveMin} د فقط (${studentActivePercent}%) من الوقت النشط. حديث المعلم (${totalTeacherTalkMin} د) استغرق معظم الحصة. يجب أن يكون غالبية وقت الحصة وقتاً نشطاً للطلاب.`,
-        recommended: "أكثر من 50% وقت الطلاب",
-        actual: `${studentActivePercent}% وقت الطلاب`,
+        activity: "Student active time",
+        detail: `Students had only ${studentActiveMin} min (${studentActivePercent}%) of active time. Teacher talk (${totalTeacherTalkMin} min) took up most of the session. The majority of session time should be active student time.`,
+        recommended: "Over 50% student time",
+        actual: `${studentActivePercent}% student time`,
       });
     }
 
@@ -1388,8 +1388,8 @@ export class DatabaseStorage implements IStorage {
     if (chatTimestamps.length === 0) {
       needsImprovement.push({
         category: "pedagogy",
-        activity: "تفاعل المحادثة",
-        detail: `لم يتم تسجيل رسائل محادثة من الطلاب خلال الحصة. يجب على المعلمين حث الطلاب على الرد في المحادثة للتحقق من الفهم والحفاظ على التفاعل.`,
+        activity: "Chat engagement",
+        detail: `No student chat messages were recorded during the session. Teachers should prompt students to respond in chat to check understanding and maintain engagement.`,
       });
       return;
     }
@@ -1429,24 +1429,24 @@ export class DatabaseStorage implements IStorage {
     if (engagedBursts >= 3) {
       wentWell.push({
         category: "pedagogy",
-        activity: "تفاعل المحادثة",
-        detail: `تفاعل الطلاب في المحادثة ${engagedBursts} مرات خلال أو بعد حديث المعلم مباشرة (${studentChats.length} رسالة إجمالية من ${new Set(studentChats.map(c => c.creatorId)).size} طالب). هذا يدل على أن المعلم طلب ردوداً بشكل فعال وتحقق من الفهم.`,
+        activity: "Chat engagement",
+        detail: `Students engaged in chat ${engagedBursts} times during or right after teacher talk (${studentChats.length} total messages from ${new Set(studentChats.map(c => c.creatorId)).size} students). This indicates the teacher actively solicited responses and checked understanding.`,
       });
     } else if (engagedBursts >= 1) {
       needsImprovement.push({
         category: "pedagogy",
-        activity: "تفاعل المحادثة",
-        detail: `تم اكتشاف ${engagedBursts} فقط من نوبات تفاعل المحادثة خلال مقاطع حديث المعلم. مع ${studentChats.length} رسالة إجمالية من الطلاب، يمكن للمعلم بذل المزيد لاستخراج الردود — اطلب من الطلاب كتابة إجاباتهم في المحادثة بعد كل شرح.`,
-        recommended: "3+ طلبات تفاعل لكل حصة",
-        actual: `${engagedBursts} نوبات تفاعل`,
+        activity: "Chat engagement",
+        detail: `Only ${engagedBursts} chat engagement bursts detected during teacher talk segments. With ${studentChats.length} total student messages, the teacher could do more to elicit responses — ask students to type their answers in chat after each explanation.`,
+        recommended: "3+ engagement prompts per session",
+        actual: `${engagedBursts} engagement bursts`,
       });
     } else {
       needsImprovement.push({
         category: "pedagogy",
-        activity: "تفاعل المحادثة",
-        detail: `بينما تم إرسال ${studentChats.length} رسالة من الطلاب في المحادثة، لم يبدُ أن أياً منها كان رداً مباشراً على طلبات المعلم. يجب على المعلم طلب الرد من الطلاب في المحادثة للتحقق من الفهم خلال الدروس.`,
-        recommended: "متابعة منتظمة عبر المحادثة",
-        actual: "لم يتم اكتشاف تفاعل محفّز",
+        activity: "Chat engagement",
+        detail: `While ${studentChats.length} student messages were sent in chat, none appeared to be direct responses to teacher prompts. The teacher should prompt students to respond in chat to check understanding during lessons.`,
+        recommended: "Regular chat-based check-ins",
+        actual: "No prompted engagement detected",
       });
     }
   }

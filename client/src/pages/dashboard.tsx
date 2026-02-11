@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   Users, Clock, ThermometerSun, CheckCircle, BarChart3, Percent,
-  ThumbsUp, AlertTriangle, BookOpen, ClipboardCheck, ChevronDown, ChevronLeft,
+  ThumbsUp, AlertTriangle, BookOpen, ClipboardCheck, ChevronDown, ChevronLeft, ChevronRight,
   ListChecks, UsersRound, Target, Timer, Lightbulb, MessageSquare, GraduationCap,
   ShieldCheck, Star, ArrowRight
 } from "lucide-react";
@@ -168,7 +168,7 @@ function ScoreStars({ score }: { score: number }) {
           }`}
         />
       ))}
-      <span className="mr-1.5 text-sm font-semibold tabular-nums">{score}/5</span>
+      <span className="ml-1.5 text-sm font-semibold tabular-nums">{score}/5</span>
     </div>
   );
 }
@@ -179,7 +179,7 @@ function ScoreBadge({ score }: { score: number }) {
     : score >= 3
     ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
     : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
-  const label = score >= 4 ? "ممتاز" : score >= 3 ? "مقبول" : "يحتاج تحسين";
+  const label = score >= 4 ? "Excellent" : score >= 3 ? "Acceptable" : "Needs Improvement";
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${color}`} data-testid="score-badge">
       {label}
@@ -194,7 +194,7 @@ function QAEvaluationSection({ evaluation }: { evaluation: DashboardData["qaEval
     <div className="space-y-3" data-testid="section-qa-evaluation">
       <SectionHeading
         icon={<ShieldCheck className="h-4 w-4" />}
-        title="تقييم جودة الحصة"
+        title="Session Quality Evaluation"
         badge={`${evaluation.overallScore}/5`}
         testId="heading-qa-evaluation"
       />
@@ -207,7 +207,7 @@ function QAEvaluationSection({ evaluation }: { evaluation: DashboardData["qaEval
                 <ShieldCheck className="h-6 w-6" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">التقييم العام</p>
+                <p className="text-sm text-muted-foreground">Overall Evaluation</p>
                 <div className="flex items-center gap-2">
                   <span className="text-2xl font-bold tabular-nums" data-testid="text-overall-score">{evaluation.overallScore}</span>
                   <span className="text-lg text-muted-foreground">/5</span>
@@ -216,9 +216,9 @@ function QAEvaluationSection({ evaluation }: { evaluation: DashboardData["qaEval
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2 text-sm flex-1">
-              <div><span className="text-muted-foreground">الأسئلة:</span> <span className="font-medium">{evaluation.summary.totalQuestions}</span></div>
-              <div><span className="text-muted-foreground">حديث المعلم:</span> <span className="font-medium">{evaluation.summary.teacherTalkMin} د</span></div>
-              <div><span className="text-muted-foreground">نشاط الطلاب:</span> <span className="font-medium">{evaluation.summary.studentActivePercent}%</span></div>
+              <div><span className="text-muted-foreground">Questions:</span> <span className="font-medium">{evaluation.summary.totalQuestions}</span></div>
+              <div><span className="text-muted-foreground">Teacher Talk:</span> <span className="font-medium">{evaluation.summary.teacherTalkMin} min</span></div>
+              <div><span className="text-muted-foreground">Student Activity:</span> <span className="font-medium">{evaluation.summary.studentActivePercent}%</span></div>
             </div>
           </div>
 
@@ -230,13 +230,13 @@ function QAEvaluationSection({ evaluation }: { evaluation: DashboardData["qaEval
                 onOpenChange={(open) => setExpandedId(open ? criterion.id : null)}
               >
                 <CollapsibleTrigger
-                  className="flex items-center gap-3 w-full text-right px-3 py-2.5 rounded-md hover-elevate"
+                  className="flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-md hover-elevate"
                   data-testid={`qa-criterion-${criterion.id}`}
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                    {expandedId === criterion.id ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronLeft className="h-4 w-4 flex-shrink-0" />}
+                    {expandedId === criterion.id ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
                     <span className="text-sm font-medium tabular-nums text-muted-foreground w-5">{criterion.id}.</span>
-                    <span className="text-sm font-medium truncate">{criterion.nameAr}</span>
+                    <span className="text-sm font-medium truncate">{criterion.nameEn}</span>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <ScoreBadge score={criterion.score} />
@@ -244,9 +244,9 @@ function QAEvaluationSection({ evaluation }: { evaluation: DashboardData["qaEval
                   </div>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <div className="mr-9 ml-3 mb-3 mt-1 space-y-3 rounded-md border p-3" data-testid={`qa-detail-${criterion.id}`}>
+                  <div className="ml-9 mr-3 mb-3 mt-1 space-y-3 rounded-md border p-3" data-testid={`qa-detail-${criterion.id}`}>
                     <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">الأدلة</p>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Evidence</p>
                       <ul className="space-y-1">
                         {criterion.evidence.map((e, i) => (
                           <li key={i} className="flex gap-2 text-sm">
@@ -258,7 +258,7 @@ function QAEvaluationSection({ evaluation }: { evaluation: DashboardData["qaEval
                     </div>
                     {criterion.recommendations.length > 0 && (
                       <div className="space-y-1.5">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">التوصيات</p>
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Recommendations</p>
                         <ul className="space-y-1">
                           {criterion.recommendations.map((r, i) => (
                             <li key={i} className="flex gap-2 text-sm">
@@ -314,7 +314,7 @@ function InsightsList({ insights, prefix }: { insights: string[]; prefix: string
     <div className="space-y-2 rounded-md bg-muted/40 dark:bg-muted/20 p-3" data-testid={`${prefix}-insights`}>
       <div className="flex items-center gap-2 text-sm font-medium">
         <Lightbulb className="h-4 w-4 text-amber-500 dark:text-amber-400" />
-        <span>ملاحظات</span>
+        <span>Observations</span>
       </div>
       <ul className="space-y-1.5">
         {insights.map((insight, i) => (
@@ -337,8 +337,8 @@ function QuestionBreakdown({ questions, prefix }: { questions: QuestionAnalysis[
         className="flex items-center gap-2 text-sm font-medium hover-elevate rounded-md px-2 py-1.5"
         data-testid={`${prefix}-toggle-questions`}
       >
-        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-        تفصيل الأسئلة ({questions.length})
+        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        Question Breakdown ({questions.length})
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="space-y-2 mt-3">
@@ -352,13 +352,13 @@ function QuestionBreakdown({ questions, prefix }: { questions: QuestionAnalysis[
               </div>
               <CorrectnessBar percent={q.percent} />
               <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                <span>أجابوا: {q.answered}/{q.seen}</span>
-                <span>صحيح: {q.correct}/{q.answered}</span>
+                <span>Answered: {q.answered}/{q.seen}</span>
+                <span>Correct: {q.correct}/{q.answered}</span>
               </div>
               {q.insights.length > 0 && (
                 <div className="space-y-1 pt-1">
                   {q.insights.map((ins, insIdx) => (
-                    <p key={insIdx} className="text-xs text-muted-foreground pr-3 border-r-2 border-amber-400/30">
+                    <p key={insIdx} className="text-xs text-muted-foreground pl-3 border-l-2 border-amber-400/30">
                       {ins}
                     </p>
                   ))}
@@ -379,13 +379,13 @@ function FeedbackInline({ feedback, prefix }: { feedback: { wentWell: FeedbackIt
 
   return (
     <div className="space-y-3 pt-3 border-t" data-testid={`${prefix}-feedback`}>
-      <p className="text-sm font-medium">ملاحظات</p>
+      <p className="text-sm font-medium">Observations</p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {hasWell && (
           <div className="space-y-2.5 rounded-md bg-emerald-50/50 dark:bg-emerald-950/20 p-3">
             <div className="flex items-center gap-2">
               <ThumbsUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-              <span className="text-sm font-medium">ما تم بشكل صحيح</span>
+              <span className="text-sm font-medium">What Went Well</span>
             </div>
             <ul className="space-y-2.5">
               {feedback.wentWell.map((item, idx) => (
@@ -401,7 +401,7 @@ function FeedbackInline({ feedback, prefix }: { feedback: { wentWell: FeedbackIt
           <div className="space-y-2.5 rounded-md bg-amber-50/50 dark:bg-amber-950/20 p-3">
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-              <span className="text-sm font-medium">يحتاج تحسين</span>
+              <span className="text-sm font-medium">Needs Improvement</span>
             </div>
             <ul className="space-y-2.5">
               {feedback.needsImprovement.map((item, idx) => (
@@ -439,13 +439,13 @@ function SegmentBreakdown({ segments, parentIdx, prefix }: { segments: string[];
         className="flex items-center gap-1 text-xs font-medium text-muted-foreground mt-1 hover-elevate rounded-md px-1.5 py-0.5"
         data-testid={`toggle-segments-${prefix}-${parentIdx}`}
       >
-        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
-        التفاصيل ({segments.length})
+        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        Details ({segments.length})
       </CollapsibleTrigger>
       <CollapsibleContent>
         <ul className="mt-1.5 space-y-1">
           {segments.map((seg, sIdx) => (
-            <li key={sIdx} className="text-xs text-muted-foreground pr-3 border-r-2 border-border">
+            <li key={sIdx} className="text-xs text-muted-foreground pl-3 border-l-2 border-border">
               {seg}
             </li>
           ))}
@@ -456,26 +456,26 @@ function SegmentBreakdown({ segments, parentIdx, prefix }: { segments: string[];
 }
 
 function formatCategory(cat: string): string {
-  if (cat === "time_management") return "إدارة الوقت";
-  if (cat === "student_stage") return "مرحلة الطالب";
-  if (cat === "pedagogy") return "أسلوب التدريس";
+  if (cat === "time_management") return "Time Management";
+  if (cat === "student_stage") return "Student Stage";
+  if (cat === "pedagogy") return "Teaching Methodology";
   return cat;
 }
 
 function formatLevel(level: string): string {
   const map: Record<string, string> = {
-    L1: "الأول",
-    L2: "الثاني",
-    L3: "الثالث",
-    L4: "الرابع",
-    L5: "الخامس",
-    L6: "السادس",
-    L7: "السابع",
-    L8: "الثامن",
-    L9: "التاسع",
-    L10: "العاشر",
-    L11: "الحادي عشر",
-    L12: "الثاني عشر",
+    L1: "Level 1",
+    L2: "Level 2",
+    L3: "Level 3",
+    L4: "Level 4",
+    L5: "Level 5",
+    L6: "Level 6",
+    L7: "Level 7",
+    L8: "Level 8",
+    L9: "Level 9",
+    L10: "Level 10",
+    L11: "Level 11",
+    L12: "Level 12",
   };
   return map[level] || level;
 }
@@ -493,9 +493,9 @@ function classifyActivityType(type: string): string {
 function formatActivityType(type: string): string {
   const canonical = classifyActivityType(type);
   const map: Record<string, string> = {
-    SECTION_CHECK: "اختبار الفهم",
-    EXIT_TICKET: "اختبار الفهم النهائي",
-    TEAM_EXERCISE: "تمرين جماعي",
+    SECTION_CHECK: "Section Check",
+    EXIT_TICKET: "Exit Ticket",
+    TEAM_EXERCISE: "Team Exercise",
   };
   return map[canonical] || type;
 }
@@ -519,28 +519,28 @@ function CombinedSectionCheckBlock({ combined, prefix }: { combined: CombinedAna
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
           <MetricTile
             icon={<ListChecks className="h-3.5 w-3.5" />}
-            label="إجمالي الأسئلة"
+            label="Total Questions"
             value={String(combined.totalQuestions)}
-            sub={`عبر ${combined.count} اختبارات`}
+            sub={`across ${combined.count} checks`}
             testId={`${prefix}-metric-questions`}
           />
           <MetricTile
             icon={<Users className="h-3.5 w-3.5" />}
-            label="عدد الطلاب الذين أجابوا"
+            label="Students Answered"
             value={`${combined.avgStudentsAnswered} / ${combined.totalStudents}`}
             testId={`${prefix}-metric-students`}
           />
           <MetricTile
             icon={<CheckCircle className="h-3.5 w-3.5" />}
-            label="نسبة الإجابات الصحيحة"
+            label="Correctness"
             value={`${combined.avgCorrectness}%`}
             testId={`${prefix}-metric-correctness`}
           />
           <MetricTile
             icon={<Clock className="h-3.5 w-3.5" />}
-            label="المدة الإجمالية"
-            value={`${combined.durationMin} د`}
-            sub={combined.plannedDurationMin > 0 ? `المخطط: ${combined.plannedDurationMin} د` : undefined}
+            label="Total Duration"
+            value={`${combined.durationMin} min`}
+            sub={combined.plannedDurationMin > 0 ? `Planned: ${combined.plannedDurationMin} min` : undefined}
             testId={`${prefix}-metric-duration`}
           />
         </div>
@@ -564,27 +564,27 @@ function SingleActivityBlock({ instance: inst, prefix }: { instance: ActivityIns
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
           <MetricTile
             icon={<ListChecks className="h-3.5 w-3.5" />}
-            label="الأسئلة"
+            label="Questions"
             value={String(inst.totalMcqs)}
             testId={`${prefix}-metric-questions`}
           />
           <MetricTile
             icon={<Users className="h-3.5 w-3.5" />}
-            label="عدد الطلاب الذين أجابوا"
+            label="Students Answered"
             value={`${inst.studentsWhoAnswered} / ${inst.totalStudents}`}
             testId={`${prefix}-metric-students`}
           />
           <MetricTile
             icon={<CheckCircle className="h-3.5 w-3.5" />}
-            label="نسبة الإجابات الصحيحة"
+            label="Correctness"
             value={`${inst.overallCorrectness?.percent ?? 0}%`}
             testId={`${prefix}-metric-correctness`}
           />
           <MetricTile
             icon={<Clock className="h-3.5 w-3.5" />}
-            label="المدة"
-            value={`${inst.durationMin} د`}
-            sub={inst.plannedDurationMin > 0 ? `المخطط: ${inst.plannedDurationMin} د` : undefined}
+            label="Duration"
+            value={`${inst.durationMin} min`}
+            sub={inst.plannedDurationMin > 0 ? `Planned: ${inst.plannedDurationMin} min` : undefined}
             testId={`${prefix}-metric-duration`}
           />
         </div>
@@ -595,9 +595,9 @@ function SingleActivityBlock({ instance: inst, prefix }: { instance: ActivityIns
           <div className="flex gap-3 p-3 rounded-md bg-destructive/10 border border-destructive/20" data-testid={`${prefix}-teacher-talk-warning`}>
             <AlertTriangle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
             <div className="space-y-0.5">
-              <p className="text-sm font-medium text-destructive">كان المعلم يتحدث أثناء اختبار الفهم النهائي</p>
+              <p className="text-sm font-medium text-destructive">Teacher was speaking during the Exit Ticket</p>
               <p className="text-xs text-muted-foreground">
-                تحدث لمدة {inst.teacherTalkOverlapMin} د حول: {inst.teacherTalkTopics}. يجب أن يجيب الطلاب بشكل مستقل.
+                Spoke for {inst.teacherTalkOverlapMin} min about: {inst.teacherTalkTopics}. Students should answer independently.
               </p>
             </div>
           </div>
@@ -656,7 +656,7 @@ function PedagogySection({ items, prefix, title, icon }: { items: { wentWell: Fe
               <div className="space-y-2.5 rounded-md bg-emerald-50/50 dark:bg-emerald-950/20 p-3">
                 <div className="flex items-center gap-2">
                   <ThumbsUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                  <span className="text-sm font-medium">ما تم بشكل صحيح</span>
+                  <span className="text-sm font-medium">What Went Well</span>
                 </div>
                 <ul className="space-y-3">
                   {items.wentWell.map((item, idx) => (
@@ -672,7 +672,7 @@ function PedagogySection({ items, prefix, title, icon }: { items: { wentWell: Fe
               <div className="space-y-2.5 rounded-md bg-amber-50/50 dark:bg-amber-950/20 p-3">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                  <span className="text-sm font-medium">يحتاج تحسين</span>
+                  <span className="text-sm font-medium">Needs Improvement</span>
                 </div>
                 <ul className="space-y-3">
                   {items.needsImprovement.map((item, idx) => (
@@ -729,7 +729,7 @@ export default function Dashboard() {
       <div className="min-h-screen bg-background flex items-center justify-center" data-testid="dashboard-error">
         <Card className="max-w-md w-full">
           <CardHeader>
-            <CardTitle className="text-lg">فشل تحميل لوحة التحكم</CardTitle>
+            <CardTitle className="text-lg">Failed to load dashboard</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground text-sm">{(error as Error).message}</p>
@@ -805,23 +805,23 @@ export default function Dashboard() {
             <div className="flex items-center justify-center h-9 w-9 rounded-md bg-primary/15 text-primary">
               <GraduationCap className="h-5 w-5" />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight" data-testid="text-dashboard-title">تقرير الحصة</h1>
+            <h1 className="text-2xl font-bold tracking-tight" data-testid="text-dashboard-title">Session Report</h1>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2 text-sm">
             <div data-testid="text-session-id">
-              <span className="text-muted-foreground">رقم الحصة:</span>{" "}
+              <span className="text-muted-foreground">Session ID:</span>{" "}
               <span className="font-medium">{session.courseSessionId}</span>
             </div>
             <div data-testid="text-teacher-name">
-              <span className="text-muted-foreground">المعلم:</span>{" "}
+              <span className="text-muted-foreground">Teacher:</span>{" "}
               <span className="font-medium">{session.teacherName}</span>
             </div>
             <div data-testid="text-level">
-              <span className="text-muted-foreground">المستوى:</span>{" "}
-              <span className="font-medium">{formatLevel(session.level) || 'غير محدد'}</span>
+              <span className="text-muted-foreground">Level:</span>{" "}
+              <span className="font-medium">{formatLevel(session.level) || 'Not specified'}</span>
             </div>
             <div data-testid="text-topic">
-              <span className="text-muted-foreground">الموضوع:</span>{" "}
+              <span className="text-muted-foreground">Topic:</span>{" "}
               <span className="font-medium">{session.topic}</span>
             </div>
           </div>
@@ -830,7 +830,7 @@ export default function Dashboard() {
         <div className="space-y-3">
           <SectionHeading
             icon={<BarChart3 className="h-4 w-4" />}
-            title="ملخص الحصة"
+            title="Session Summary"
             testId="heading-session-summary"
           />
           <Card data-testid="card-session-summary">
@@ -838,33 +838,33 @@ export default function Dashboard() {
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
                 <MetricTile
                   icon={<Users className="h-3.5 w-3.5" />}
-                  label="الحضور"
+                  label="Attendance"
                   value={String(studentMetrics.totalStudents)}
                   testId="metric-attendance"
                 />
                 <MetricTile
                   icon={<CheckCircle className="h-3.5 w-3.5" />}
-                  label="نسبة الإجابات الصحيحة"
+                  label="Correctness"
                   value={`${pollStats.correctnessPercent}%`}
                   testId="metric-correctness"
                 />
                 <MetricTile
                   icon={<ThermometerSun className="h-3.5 w-3.5" />}
-                  label="الحرارة والتفاعل"
+                  label="Temperature & Engagement"
                   value={`${sessionTemp}%`}
                   testId="metric-temperature"
                 />
                 <MetricTile
                   icon={<Clock className="h-3.5 w-3.5" />}
-                  label="وقت التدريس"
-                  value={`${teachingMinutes} د`}
+                  label="Teaching Time"
+                  value={`${teachingMinutes} min`}
                   testId="metric-teaching-time"
                 />
                 <MetricTile
                   icon={<Percent className="h-3.5 w-3.5" />}
-                  label="إكمال الأسئلة"
+                  label="Session Completion"
                   value={`${studentMetrics.sessionCompletedPercent}%`}
-                  sub={`متوسط ${studentMetrics.avgLearningTime} / ${teachingMinutes} د`}
+                  sub={`avg ${studentMetrics.avgLearningTime} / ${teachingMinutes} min`}
                   testId="metric-session-completed"
                 />
               </div>
@@ -875,8 +875,8 @@ export default function Dashboard() {
         <div className="space-y-3" data-testid="section-activities-table">
           <SectionHeading
             icon={<BarChart3 className="h-4 w-4" />}
-            title="الأنشطة"
-            badge={`${totalHappened}/${totalPlanned} مكتملة`}
+            title="Activities"
+            badge={`${totalHappened}/${totalPlanned} completed`}
             testId="heading-activities"
           />
           <Card data-testid="card-activity-table">
@@ -885,10 +885,10 @@ export default function Dashboard() {
                 <table className="w-full text-sm" data-testid="table-activities">
                   <thead>
                     <tr className="border-b">
-                      <th className="pb-3 pl-4 text-right font-medium text-muted-foreground">نوع النشاط</th>
-                      <th className="pb-3 pl-4 text-right font-medium text-muted-foreground">المكتملة</th>
-                      <th className="pb-3 pl-4 text-left font-medium text-muted-foreground">المدة</th>
-                      <th className="pb-3 text-left font-medium text-muted-foreground">نسبة الإجابات الصحيحة</th>
+                      <th className="pb-3 pl-4 text-left font-medium text-muted-foreground">Activity Type</th>
+                      <th className="pb-3 pl-4 text-left font-medium text-muted-foreground">Completed</th>
+                      <th className="pb-3 pl-4 text-left font-medium text-muted-foreground">Duration</th>
+                      <th className="pb-3 text-left font-medium text-muted-foreground">Correctness</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -906,7 +906,7 @@ export default function Dashboard() {
                             </Badge>
                           </td>
                           <td className="py-3 pl-4 text-left tabular-nums">
-                            {durationRound > 0 ? `${durationRound} د` : "\u2014"}
+                            {durationRound > 0 ? `${durationRound} min` : "\u2014"}
                           </td>
                           <td className="py-3 text-left">
                             {correctnessPercent != null ? (
@@ -918,7 +918,7 @@ export default function Dashboard() {
                     })}
                     {groupedActivities.length === 0 && (
                       <tr>
-                        <td colSpan={4} className="py-4 text-center text-muted-foreground">لا توجد أنشطة</td>
+                        <td colSpan={4} className="py-4 text-center text-muted-foreground">No activities</td>
                       </tr>
                     )}
                   </tbody>
@@ -936,7 +936,7 @@ export default function Dashboard() {
           <PedagogySection
             items={{ wentWell: tmWentWell, needsImprovement: tmNeedsImprovement }}
             prefix="time-management"
-            title="إدارة الوقت"
+            title="Time Management"
             icon={<Clock className="h-4 w-4" />}
           />
         )}
@@ -948,7 +948,7 @@ export default function Dashboard() {
         <PedagogySection
           items={{ wentWell: pedWentWell, needsImprovement: pedNeedsImprovement }}
           prefix="other-comments"
-          title="ملاحظات أخرى"
+          title="Additional Observations"
           icon={<MessageSquare className="h-4 w-4" />}
         />
 
