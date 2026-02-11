@@ -705,8 +705,15 @@ function PedagogySection({ items, prefix, title, icon }: { items: { wentWell: Fe
 }
 
 export default function Dashboard() {
+  const { data: sessionInfo } = useQuery<{ sessionId: number | null }>({
+    queryKey: ["/api/detected-session"],
+  });
+
+  const sessionId = sessionInfo?.sessionId;
+
   const { data, isLoading, error } = useQuery<DashboardData>({
-    queryKey: ["/api/dashboard/70712"],
+    queryKey: ["/api/dashboard", sessionId],
+    enabled: !!sessionId,
   });
 
   if (isLoading) {

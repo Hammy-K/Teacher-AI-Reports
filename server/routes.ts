@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { importAllData } from "./import-data";
+import { importAllData, getDetectedSessionId } from "./import-data";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import {
@@ -156,6 +156,20 @@ export async function registerRoutes(
     try {
       const session = await storage.getSessionOverview();
       res.json(session ? [session] : []);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/detected-session", async (_req, res) => {
+    try {
+      const session = await storage.getSessionOverview();
+      if (session) {
+        res.json({ sessionId: session.courseSessionId });
+      } else {
+        const detected = getDetectedSessionId();
+        res.json({ sessionId: detected });
+      }
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
