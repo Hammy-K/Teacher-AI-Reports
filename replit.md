@@ -1,6 +1,20 @@
 # Overview
 
-This is a **Classroom Session Analytics Dashboard** — a full-stack web application that imports educational course session data from CSV files into a PostgreSQL database and presents it through an interactive dashboard. The app visualizes teaching metrics, student engagement, transcripts, chat logs, poll results, reactions, and activity timelines for course sessions.
+This is a **Classroom Session Analytics Dashboard** (English LTR version) — a full-stack web application that imports educational course session data from CSV files (or Excel) into a PostgreSQL database and presents it through an interactive dashboard. The app visualizes teaching metrics, student engagement, transcripts, chat logs, poll results, reactions, and activity timelines for course sessions.
+
+The dashboard is **session-agnostic** — it auto-detects the session ID from CSV filenames in `attached_assets/` and works for any session data.
+
+# Recent Changes
+
+- **2026-02-11**: Converted entire UI from Arabic RTL to English LTR
+  - HTML lang="en" dir="ltr", fonts changed to Inter/Open Sans
+  - All dashboard labels, headings, metrics in English
+  - All backend analytics (insights, feedback, QA evidence, recommendations) in English
+  - RTL margins/paddings swapped to LTR, ChevronLeft→ChevronRight for collapsed state
+  - Session-agnostic import: auto-detects session ID from CSV filenames
+  - Added Excel (.xlsx) import support
+  - Added `/api/detected-session` endpoint for dynamic session detection
+  - Dashboard auto-fetches detected session instead of hardcoded ID
 
 # User Preferences
 

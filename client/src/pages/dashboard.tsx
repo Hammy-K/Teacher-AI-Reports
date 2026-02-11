@@ -716,7 +716,7 @@ export default function Dashboard() {
     enabled: !!sessionId,
   });
 
-  if (isLoading) {
+  if (!sessionId || isLoading) {
     return (
       <div className="min-h-screen bg-background p-6" data-testid="dashboard-loading">
         <div className="max-w-5xl mx-auto space-y-6">
