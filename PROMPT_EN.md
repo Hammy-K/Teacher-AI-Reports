@@ -4,6 +4,16 @@ Build a full-stack web application (React + Express + PostgreSQL) that imports c
 
 > **IMPORTANT**: This prompt is session-agnostic. The session ID is a variable `{SESSION_ID}` throughout. The system must auto-detect all CSV files in `attached_assets/` matching the patterns below, extract the session ID from the filenames, and use it for all data import and API queries. Nothing should be hardcoded to any specific session number.
 
+> **LANGUAGE RULE**: The overall dashboard UI, analytics output, insights, feedback, QA evaluations, and recommendations must all be in **English**. However, the following data fields contain Arabic source content and **must remain in Arabic** as-is — do NOT translate or transliterate them:
+> - **Teacher name** (from `user_session` sheet, `user_name` where `user_type = 'TEACHER'`)
+> - **Student names** (from `user_session` sheet, `user_name`)
+> - **Question text** (from `f_user_poll` sheet, `question_text`)
+> - **Chat messages** (from `chats` sheet, `message_text` and `creator_name`)
+> - **Transcript text** (from `namra_transcript` sheet, `text` column)
+> - **Session name** (from `course_session` sheet, `course_session_name`)
+>
+> These are Arabic-language source data — the UI labels around them (e.g. "Teacher:", "Question Breakdown", "Chat Log") are in English, but the data values themselves stay in Arabic.
+
 ---
 
 ## 1. DATA SOURCE
@@ -23,6 +33,37 @@ The app reads 7 CSV files from the `attached_assets/` directory. Each filename c
 **Session ID auto-detection**: On startup, scan `attached_assets/` for files matching `course_Session_*_*.csv`. Extract the session ID from the filename using regex: `/course_Session_(\d+)_/`. Use this detected ID for all other file lookups and database inserts.
 
 Data is imported once on first startup and stored in PostgreSQL. Use `csv-parse` for parsing. Check `isDataImported()` to avoid re-importing.
+
+### 1.1 Excel (.xlsx) Import Support
+
+If an Excel file matching `compiled_{SESSION_ID}_*.xlsx` exists in `attached_assets/`, automatically extract each sheet to individual CSV files before import. Sheet names map to CSV output files as follows:
+
+| Sheet Name Pattern (case-insensitive substring match) | Output CSV |
+|---|---|
+| `course_session` | `course_Session_{SESSION_ID}_extracted.csv` |
+| `transcript` | `namra_transcript_{SESSION_ID}_extracted.csv` |
+| `chats` | `chats_{SESSION_ID}_extracted.csv` |
+| `classroom_activity` | `classroom_activity_{SESSION_ID}_extracted.csv` |
+| `user_poll` | `f_user_poll_{SESSION_ID}_extracted.csv` |
+| `user_reaction` | `f_user_reaction_{SESSION_ID}_extracted.csv` |
+| `user_session` | `user_session_{SESSION_ID}_extracted.csv` |
+
+Use the `xlsx` library to read the workbook and `XLSX.utils.sheet_to_csv()` to export each sheet. Only extract if the output CSV doesn't already exist.
+
+### 1.2 Arabic Text Encoding Fix (Mac Roman → UTF-8)
+
+Excel files exported from certain tools encode Arabic text using Mac Roman character encoding, which produces garbled characters (e.g., `ÿ£.ÿπÿ®ÿØÿßŸÑ` instead of `أ.عبدالرزاق`). During CSV import, apply an encoding fix to all string fields:
+
+```
+function fixMacRomanArabic(str: string): string {
+  1. Check if string contains Mac Roman artifact characters (ÿ, Ÿ, ∫, π, ≤, ≥, etc.)
+  2. If yes: encode the string as Mac Roman bytes using iconv-lite, then decode as UTF-8
+  3. If the decoded result contains Arabic characters (Unicode range \u0600-\u06FF), use the decoded version
+  4. Otherwise, return the original string unchanged
+}
+```
+
+Use the `iconv-lite` library: `iconv.encode(str, 'macroman')` → `.toString('utf8')`. Apply this function to every string field in every CSV row during import.
 
 ---
 
@@ -86,8 +127,34 @@ Apply this classification EARLY in the data pipeline (when building the activiti
 
 The backend computes ALL analytics server-side in a single `getDashboardData(courseSessionId)` method that returns one comprehensive JSON object. The frontend is purely presentational.
 
+### 4.0 Dashboard Summary Metrics — Exact Definitions
+
+The dashboard header displays 5 key metrics. Each metric has a precise calculation formula and source sheet:
+
+| Metric | Label | Source Sheet | Calculation | Display Format |
+|---|---|---|---|---|
+| **Attendance** | "Attendance" | `user_session` | Count of rows where `user_type = 'STUDENT'` | Integer (e.g., "23") |
+| **Correctness** | "Correctness" | `f_user_poll` | `SUM(is_correct_answer = true) / SUM(poll_answered = true) × 100` across all poll rows for this session | Percentage with color: green ≥75%, amber ≥50%, red <50% |
+| **Temperature** | "Temperature & Engagement" | `course_session` | Direct value from `session_temperature` column (already 0–100 scale) | Integer with "%" suffix |
+| **Teaching Time** | "Teaching Time" | `course_session` | Direct value from `teaching_time` column (in minutes) | Number with "min" suffix (e.g., "50 min") |
+| **Session Completion** | "Session Completion" | `user_session` + `course_session` | `AVG(learning_time where user_type = 'STUDENT') / teaching_time × 100` | Percentage, subtitle shows "{avg_learning_time} / {teaching_time} min" |
+
+**Additional derived metrics used internally (not displayed as summary cards):**
+
+| Metric | Source Sheet | Calculation |
+|---|---|---|
+| **Response Rate** | `f_user_poll` | `COUNT(poll_answered = true) / COUNT(all poll records) × 100` — i.e., how many of all poll entries were actually answered |
+| **Teacher Name** | `user_session` | `user_name` where `user_type = 'TEACHER'` (kept in Arabic) |
+| **Topic** | `course_session` | Extracted from `course_session_name` via regex `/^(.+?)(L\d+)$/` → group 1 is topic (kept in Arabic) |
+| **Level** | `course_session` | Extracted from `course_session_name` via regex `/^(.+?)(L\d+)$/` → group 2 parsed as "Level {N}" (English) |
+| **Teacher Talk Time** | `namra_transcript` | Sum of all `(end_time - start_time)` durations across transcript rows, converted to minutes |
+| **Student Active %** | Derived | `(teaching_time - teacher_talk_time) / teaching_time × 100` |
+| **Chat Participation** | `chats` + `user_session` | Count of distinct `creator_id` in chats where `user_type = 'STUDENT'` / total students × 100 |
+| **Activities Completed** | `classroom_activity` | Count where `activity_happened = true` / total activities |
+| **Per-Activity Correctness** | `f_user_poll` | Group polls by `classroom_activity_id`, then `SUM(is_correct_answer) / SUM(poll_answered) × 100` per group |
+
 ### 4.1 Session Metadata
-- Extract teacher name from `user_sessions` where userType = 'TEACHER'
+- Extract teacher name from `user_sessions` where userType = 'TEACHER' (Arabic — do not translate)
 - **Teacher name cleanup**: `name.replace(/أ\.(?!\s)/g, 'أ. ').replace(/\s+ال\s+/g, ' آل ').trim()` (handles Arabic naming conventions even in English output)
 - **Parse session name**: Extract topic and level from `courseSessionName` using regex `/^(.+?)(L\d+)$/`
 - Level formatting: L1→"Level 1", L2→"Level 2", L3→"Level 3", etc. (parse the digit, display as "Level {N}")
@@ -95,13 +162,13 @@ The backend computes ALL analytics server-side in a single `getDashboardData(cou
 
 ### 4.2 Student Metrics
 - Total students: count from `user_sessions` where userType = 'STUDENT'
-- Average learning time: mean of `learningTime` across students
-- Session temperature: from `course_sessions` table
+- Average learning time: mean of `learningTime` across students (from `user_session` sheet, `learning_time` column)
+- Session temperature: from `course_sessions` table (`session_temperature` column)
 
 ### 4.3 Poll Statistics
-- Overall correctness percent = totalCorrect / totalAnswered × 100
-- Per-question breakdown: questionId, questionText (HTML-stripped), correct count, total answered, percent
-- Per-activity correctness map: classroomActivityId → {answered, correct, percent}
+- Overall correctness percent = `SUM(is_correct_answer = true) / SUM(poll_answered = true) × 100` from `f_user_poll` sheet
+- Per-question breakdown: group by `question_id`, for each: questionText (HTML-stripped, kept in Arabic), correct count, total answered, percent
+- Per-activity correctness map: group by `classroom_activity_id` → {answered, correct, percent}
 
 ### 4.4 Activity Analysis (per canonical type)
 
@@ -479,7 +546,7 @@ The frontend fetches this on load, using the session ID from the URL or a defaul
 ## 7. TECH STACK
 
 - **Frontend**: React + TypeScript, Vite, TanStack React Query, Wouter, shadcn/ui (Card, Badge, Collapsible, Skeleton), Tailwind CSS, lucide-react icons
-- **Backend**: Express.js + TypeScript (tsx), csv-parse
+- **Backend**: Express.js + TypeScript (tsx), csv-parse, xlsx (for Excel import), iconv-lite (for Arabic encoding fix)
 - **Database**: PostgreSQL via Drizzle ORM, drizzle-zod for validation
 - **Fonts**: Inter, Open Sans (Google Fonts)
 - **Bind frontend to 0.0.0.0:5000**
@@ -497,4 +564,7 @@ The frontend fetches this on load, using the session ID from the URL or a defaul
 7. **QA scoring** uses 0.5 increments, starts at baseline 3 (or 4 for mistakes criterion), adjusts up/down based on evidence.
 8. **Teacher talk analysis** merges transcript segments with ≤5s gaps to form continuous talk blocks.
 9. **LTR layout** throughout — all text alignment, chevron directions, and grid ordering follow English left-to-right reading direction.
-10. **Arabic content preserved** — transcript text, chat messages, student names, and topic extraction remain in Arabic (as that's the source language), but all UI labels, insights, recommendations, and QA evaluations are displayed in English.
+10. **Arabic content preserved** — teacher names, student names, question text, chat messages, transcript text, and session names remain in Arabic (as that's the source language). All UI labels, headings, insights, recommendations, feedback text, and QA evaluations are displayed in English.
+11. **Excel import supported** — if a `compiled_{SESSION_ID}_*.xlsx` file exists, sheets are auto-extracted to individual CSVs before import.
+12. **Mac Roman encoding fix** — Arabic text garbled by Mac Roman encoding (common in Excel exports) is automatically detected and decoded to proper UTF-8 during import using iconv-lite.
+13. **Metrics are deterministic** — every dashboard metric has a precise formula defined in Section 4.0. The same input data always produces the same output, making the prompt portable across Replit accounts.
