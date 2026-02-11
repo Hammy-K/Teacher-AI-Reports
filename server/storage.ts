@@ -217,17 +217,21 @@ export class DatabaseStorage implements IStorage {
 
     const sessionTemperature = session?.sessionTemperature ?? 0;
 
-    const activitiesWithCorrectness = activities.map(a => ({
-      activityId: a.activityId,
-      activityType: a.activityType,
-      startTime: a.startTime,
-      endTime: a.endTime,
-      activityHappened: a.activityHappened,
-      plannedDurationMin: this.toMin(a.plannedDuration || 0),
-      durationMin: this.toMin(a.duration || 0),
-      totalMcqs: a.totalMcqs,
-      correctness: activityCorrectness[a.activityId] || null,
-    }));
+    const activitiesWithCorrectness = activities.map(a => {
+      const canonicalType = this.classifyActivityType(a.activityType, a.totalMcqs);
+      return {
+        activityId: a.activityId,
+        activityType: canonicalType,
+        originalActivityType: a.activityType,
+        startTime: a.startTime,
+        endTime: a.endTime,
+        activityHappened: a.activityHappened,
+        plannedDurationMin: this.toMin(a.plannedDuration || 0),
+        durationMin: this.toMin(a.duration || 0),
+        totalMcqs: a.totalMcqs,
+        correctness: activityCorrectness[a.activityId] || null,
+      };
+    });
 
     const feedback = this.generateFeedback(activitiesWithCorrectness, transcripts, chats, session, pollStats);
 
@@ -700,12 +704,19 @@ export class DatabaseStorage implements IStorage {
     totalStudents: number,
     feedback: { wentWell: any[]; needsImprovement: any[] }
   ): Promise<any[]> {
-    const targetTypes = ['SECTION_CHECK', 'TEAM_EXERCISE', 'EXIT_TICKET'];
+    const canonicalOrder = ['SECTION_CHECK', 'TEAM_EXERCISE', 'EXIT_TICKET'];
     const typeOrder: Record<string, number> = { SECTION_CHECK: 0, TEAM_EXERCISE: 1, EXIT_TICKET: 2 };
     const analyses: any[] = [];
 
-    for (const actType of targetTypes) {
-      const typeActivities = activities.filter(a => a.activityType === actType && a.activityHappened);
+    const grouped: Record<string, any[]> = {};
+    for (const act of activities) {
+      const canonical = act.activityType;
+      if (!grouped[canonical]) grouped[canonical] = [];
+      grouped[canonical].push(act);
+    }
+
+    for (const actType of canonicalOrder) {
+      const typeActivities = (grouped[actType] || []).filter((a: any) => a.activityHappened);
       if (typeActivities.length === 0) continue;
 
       const instances: any[] = [];
@@ -720,9 +731,12 @@ export class DatabaseStorage implements IStorage {
         instances.push(instance);
       }
 
-      const typeLabel = actType === 'SECTION_CHECK' ? 'اختبارات الفهم'
-        : actType === 'TEAM_EXERCISE' ? 'تمرين جماعي'
-        : 'اختبار الفهم النهائي';
+      const pluralLabels: Record<string, string> = {
+        SECTION_CHECK: "اختبارات الفهم",
+        TEAM_EXERCISE: "تمرين جماعي",
+        EXIT_TICKET: "اختبار الفهم النهائي",
+      };
+      const typeLabel = pluralLabels[actType] || actType;
 
       if (actType === 'SECTION_CHECK' && instances.length > 0) {
         const combined = this.combineSectionChecks(instances, totalStudents);
@@ -808,6 +822,24 @@ export class DatabaseStorage implements IStorage {
       insights,
       feedback: { wentWell: allFeedbackWell, needsImprovement: allFeedbackImprove },
     };
+  }
+
+  private classifyActivityType(activityType: string, totalMcqs: number | null): string {
+    const t = (activityType || '').toUpperCase().replace(/[\s_-]+/g, '_');
+
+    if (t === 'SECTION_CHECK') return 'SECTION_CHECK';
+    if (t === 'EXIT_TICKET') return 'EXIT_TICKET';
+    if (t === 'TEAM_EXERCISE') return 'TEAM_EXERCISE';
+
+    const exitTicketAliases = ['SQUID_GAMES', 'SQUID_GAME', 'SQUIDGAMES', 'SQUIDGAME'];
+    if (exitTicketAliases.includes(t)) return 'EXIT_TICKET';
+
+    const teamExerciseAliases = ['BETTER_CALL_SAUL', 'BETTERCALLSAUL'];
+    if (teamExerciseAliases.includes(t)) return 'TEAM_EXERCISE';
+
+    if (totalMcqs && totalMcqs > 0) return 'SECTION_CHECK';
+
+    return 'SECTION_CHECK';
   }
 
   private toMin(seconds: number): number {

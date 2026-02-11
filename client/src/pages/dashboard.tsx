@@ -480,13 +480,24 @@ function formatLevel(level: string): string {
   return map[level] || level;
 }
 
+function classifyActivityType(type: string): string {
+  const t = (type || '').toUpperCase().replace(/[\s_-]+/g, '_');
+  if (t === 'SECTION_CHECK') return 'SECTION_CHECK';
+  if (t === 'EXIT_TICKET') return 'EXIT_TICKET';
+  if (t === 'TEAM_EXERCISE') return 'TEAM_EXERCISE';
+  if (['SQUID_GAMES', 'SQUID_GAME', 'SQUIDGAMES', 'SQUIDGAME'].includes(t)) return 'EXIT_TICKET';
+  if (['BETTER_CALL_SAUL', 'BETTERCALLSAUL'].includes(t)) return 'TEAM_EXERCISE';
+  return 'SECTION_CHECK';
+}
+
 function formatActivityType(type: string): string {
+  const canonical = classifyActivityType(type);
   const map: Record<string, string> = {
     SECTION_CHECK: "اختبار الفهم",
     EXIT_TICKET: "اختبار الفهم النهائي",
     TEAM_EXERCISE: "تمرين جماعي",
   };
-  return map[type] || type;
+  return map[canonical] || type;
 }
 
 function SectionHeading({ icon, title, badge, testId }: { icon: React.ReactNode; title: string; badge?: string; testId: string }) {
