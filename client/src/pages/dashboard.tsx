@@ -132,10 +132,26 @@ interface DashboardData {
       nameEn: string;
       score: number;
       evidence: string[];
+      comments: string[];
       recommendations: string[];
       notes: string;
     }[];
     overallScore: number;
+    activityTimeline: {
+      activityId: number;
+      activityType: string;
+      label: string;
+      startTime: string;
+      endTime: string;
+      correctPercent: number;
+      preTeaching: { durationMin: number; topics: string; sampleText: string };
+      duringTeaching: { teacherTalking: boolean; durationMin: number; topics: string };
+      postTeaching: { durationMin: number; topics: string };
+      studentChatsDuring: number;
+      confusionDetected: boolean;
+      confusionExamples: string[];
+      insights: string[];
+    }[];
     summary: {
       totalStudents: number;
       totalQuestions: number;
@@ -246,7 +262,7 @@ function QAEvaluationSection({ evaluation }: { evaluation: DashboardData["qaEval
                 <CollapsibleContent>
                   <div className="ml-9 mr-3 mb-3 mt-1 space-y-3 rounded-md border p-3" data-testid={`qa-detail-${criterion.id}`}>
                     <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Evidence</p>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Key Indicators</p>
                       <ul className="space-y-1">
                         {criterion.evidence.map((e, i) => (
                           <li key={i} className="flex gap-2 text-sm">
@@ -256,6 +272,18 @@ function QAEvaluationSection({ evaluation }: { evaluation: DashboardData["qaEval
                         ))}
                       </ul>
                     </div>
+                    {criterion.comments && criterion.comments.length > 0 && (
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Transcript Observations</p>
+                        <ul className="space-y-1.5">
+                          {criterion.comments.map((c, i) => (
+                            <li key={i} className="text-sm bg-muted/50 dark:bg-muted/20 rounded-md px-3 py-2">
+                              {c}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                     {criterion.recommendations.length > 0 && (
                       <div className="space-y-1.5">
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Recommendations</p>
@@ -277,6 +305,69 @@ function QAEvaluationSection({ evaluation }: { evaluation: DashboardData["qaEval
           </div>
         </CardContent>
       </Card>
+
+      {evaluation.activityTimeline && evaluation.activityTimeline.length > 0 && (
+        <Card data-testid="card-activity-timeline">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <BookOpen className="h-4 w-4" />
+              Transcript-Activity Analysis
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">What the teacher was teaching before, during, and after each activity — cross-referenced with student results.</p>
+            {evaluation.activityTimeline.map((atl, idx) => {
+              const corrColor = atl.correctPercent >= 75 ? "text-emerald-600 dark:text-emerald-400"
+                : atl.correctPercent >= 50 ? "text-amber-600 dark:text-amber-400"
+                : "text-red-600 dark:text-red-400";
+              return (
+                <div key={idx} className="rounded-md border p-3 space-y-2" data-testid={`timeline-activity-${idx}`}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" data-testid={`badge-activity-type-${idx}`}>{atl.label}</Badge>
+                      <span className="text-xs text-muted-foreground">{atl.startTime} – {atl.endTime}</span>
+                    </div>
+                    <span className={`text-sm font-bold tabular-nums ${corrColor}`} data-testid={`text-activity-correct-${idx}`}>{atl.correctPercent}% correct</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                    <div className="bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-2">
+                      <span className="text-muted-foreground">Before:</span>{' '}
+                      <span className="font-medium">{atl.preTeaching.durationMin} min</span>{' '}
+                      <span>on "{atl.preTeaching.topics}"</span>
+                    </div>
+                    <div className="bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-2">
+                      <span className="text-muted-foreground">During:</span>{' '}
+                      {atl.duringTeaching.teacherTalking
+                        ? <span className="font-medium text-amber-600 dark:text-amber-400">{atl.duringTeaching.durationMin} min talking on "{atl.duringTeaching.topics}"</span>
+                        : <span className="text-emerald-600 dark:text-emerald-400">No teacher talk</span>
+                      }
+                    </div>
+                    <div className="bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-2">
+                      <span className="text-muted-foreground">After:</span>{' '}
+                      <span className="font-medium">{atl.postTeaching.durationMin} min</span>{' '}
+                      {atl.postTeaching.topics !== 'General teaching' && <span>on "{atl.postTeaching.topics}"</span>}
+                    </div>
+                  </div>
+                  {atl.confusionDetected && (
+                    <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 rounded-md px-2.5 py-2">
+                      <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                      <span>Student confusion detected: {atl.confusionExamples.join('; ')}</span>
+                    </div>
+                  )}
+                  <ul className="space-y-1">
+                    {atl.insights.map((ins, j) => (
+                      <li key={j} className="flex gap-2 text-xs">
+                        <Lightbulb className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-primary/70" />
+                        <span>{ins}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

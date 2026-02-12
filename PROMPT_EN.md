@@ -289,113 +289,58 @@ Chat engagement — 0 overlapping bursts:
 No student chat at all:
 - ⚠️ "No student chat messages were recorded during the session. Teachers should prompt students to respond in chat to check understanding and maintain engagement."
 
-### 4.7 QA Evaluation (9 Criteria, scored 1–5 with 0.5 increments)
+### 4.7 QA Evaluation (7 Criteria aligned to Noon Academy Teacher Performance Rubric)
 
-Each criterion returns: id, nameEn (English name), score (number), evidence (string array in English), recommendations (string array in English), notes (string).
+Each criterion returns: id, nameEn (English name), score (1–5 with 0.5 increments), evidence (key indicators array), comments (transcript-backed observations array), recommendations (string array), notes (string).
 
-**Criterion 1: Instructional & Content Mastery**
-- Base score: 3
-- Adjustments:
-  - totalQuestions ≥ 5: +0.5 (evidence: "Session included {N} questions across activities — good coverage")
-  - totalQuestions < 3: -0.5 (evidence: "Only {N} questions — limited assessment of understanding")
-  - overallCorrectness ≥ 70%: +0.5 (evidence: "Overall correctness {X}% indicates strong content delivery")
-  - overallCorrectness < 50%: -0.5 (evidence: "Overall correctness {X}% suggests content delivery issues")
-  - questionsAbove80Pct count ≥ 2: +0.5 (evidence: "{N} questions achieved 80%+ correctness")
-  - questionsBelow40Pct count ≥ 2: -0.5 (evidence: "{N} questions below 40% correctness — significant gaps")
-- Recommendations if score < 4: ["Review questions with low correctness and re-teach those concepts", "Use varied explanation methods (visuals, real-life examples) for difficult topics"]
-- Recommendations if score ≥ 4: ["Continue using diverse question types to assess understanding"]
+**Transcript-Activity Cross-Referencing**: The system builds an `activityTimeline` that, for each activity, extracts:
+- **Pre-teaching**: What the teacher was teaching before the activity (duration, topics detected from Arabic transcript)
+- **During-teaching**: Whether the teacher was talking during the activity (duration, topics)
+- **Post-teaching**: What the teacher explained after the activity (duration, topics)
+- **Confusion detection**: Student chat messages showing confusion during the activity
+- **Insights**: Specific observations correlating teaching content with student results
 
-**Criterion 2: Student Engagement**
-- Base score: 3
-- Adjustments:
-  - responseRate ≥ 80%: +0.5 (evidence: "Response rate {X}% — strong student participation")
-  - responseRate < 60%: -0.5 (evidence: "Response rate {X}% — many students not participating")
-  - sessionTemperature ≥ 0.7: +0.5 (evidence: "Session temperature {X} — high engagement level")
-  - sessionTemperature < 0.4: -0.5 (evidence: "Session temperature {X} — low engagement")
-  - chatParticipationRate ≥ 30%: +0.5 (evidence: "{N} students participated in chat")
-  - positiveSentimentPercent ≥ 60%: +0.5 (evidence: "{X}% of students showed positive sentiment")
-- Recommendations if score < 4: ["Use interactive activities to boost engagement", "Encourage chat participation by asking direct questions"]
-- Recommendations if score ≥ 4: ["Continue maintaining the high level of student interaction"]
+This timeline feeds directly into each criterion's `comments` field to provide specific, transcript-backed observations.
 
-**Criterion 3: Tutor Communication**
-- Base score: 3
-- Adjustments:
-  - teacherChatMessages ≥ 5: +0.5 (evidence: "Teacher sent {N} chat messages — active communication")
-  - teacherChatMessages < 2: -0.5 (evidence: "Teacher sent only {N} chat messages — limited interaction")
-  - longTalkSegments (>2min) = 0: +0.5 (evidence: "No extended talk periods — good pacing and dialogue")
-  - longTalkSegments ≥ 3: -0.5 (evidence: "{N} extended talk periods — could reduce lecturing time")
-  - positiveSentimentPercent ≥ 70%: +0.5 (evidence: "Strong positive sentiment ({X}%) suggests effective communication style")
-- Recommendations if score < 4: ["Increase chat interaction with students", "Break long explanations into shorter segments with student check-ins"]
-- Recommendations if score ≥ 4: ["Continue the effective communication approach"]
+**Criterion 1: Content Mastery and Explanation**
+- Evaluates: Teacher's knowledge, explanation clarity, accuracy, use of examples
+- Key Indicators: Question count, overall correctness, per-question correctness
+- Comments: For each activity, states what topic the teacher taught before it, for how long, and whether the explanation was effective based on student results. Flags weak topics needing re-explanation.
 
-**Criterion 4: Time Management**
-- Base score: 3
-- Adjustments:
-  - sessionDuration within 40–50min (target 45): +0.5 (evidence: "Session duration {X} min — within the ideal 40–50 minute range")
-  - sessionDuration < 35 or > 55: -0.5 (evidence: "Session duration {X} min — outside the recommended range")
-  - teacherTalkTime ≤ 15min: +0.5 (evidence: "Teacher talk {X} min — within the 15-minute limit")
-  - teacherTalkTime > 20min: -0.5 (evidence: "Teacher talk {X} min — significantly over the 15-minute recommendation")
-  - studentActivePercent ≥ 60%: +0.5 (evidence: "Students active {X}% of the session — student-centered")
-  - studentActivePercent < 40%: -0.5 (evidence: "Students active only {X}% — teacher-dominated session")
-- Recommendations if score < 4: ["Aim for 40–50 minute sessions with teacher talk under 15 minutes", "Plan activities to give students at least 60% active time"]
-- Recommendations if score ≥ 4: ["Good time balance — continue this approach"]
+**Criterion 2: Student Support and Motivation**
+- Evaluates: Answering student questions, encouraging participation, emotional connection
+- Key Indicators: Response rate, session temperature, chat participation, sentiment
+- Comments: Flags confusion detected in chat during activities, unanswered student questions, teacher chat engagement level.
 
-**Criterion 5: Session Pacing**
-- Base score: 3
-- Adjustments:
-  - allActivitiesCompleted: +0.5 (evidence: "All {N} planned activities were completed")
-  - completedRatio < 0.75: -0.5 (evidence: "Only {completed}/{total} activities completed")
-  - sessionCompletedPercent ≥ 80%: +0.5 (evidence: "Session completion rate {X}% — most students stayed engaged")
-  - sessionCompletedPercent < 60%: -0.5 (evidence: "Session completion {X}% — many students dropped off")
-  - avgLearningTime ≥ teachingTime × 0.7: +0.5 (evidence: "Average student learning time was {X} min out of {Y} min")
-- Recommendations if score < 4: ["Ensure all planned activities are completed within the session", "Monitor student drop-off and adjust pacing accordingly"]
-- Recommendations if score ≥ 4: ["Good pacing maintained throughout the session"]
+**Criterion 3: Communication and Teacher Presence**
+- Evaluates: Clear/engaging communication, tone variation, virtual presence
+- Key Indicators: Teacher chat messages, long talk segments (>2min), sentiment, talk segment count
+- Comments: Lists specific long uninterrupted talk periods with timestamps, topics, and duration. Assesses delivery variation.
 
-**Criterion 6: Mistakes & Impact**
-- Base score: 4 (benefit of the doubt — deduct for observable mistakes)
-- Adjustments:
-  - teacherTalkDuringExitTicket: -1.0 (evidence: "Teacher was speaking during the exit ticket — this compromises independent assessment")
-  - timeManagementIssuesCount ≥ 3: -0.5 (evidence: "{N} time management issues detected")
-  - timeManagementIssuesCount ≥ 5: additional -0.5 (evidence: "Significant number of time management mistakes ({N})")
-- Recommendations if score < 4: ["Ensure exit tickets are completed independently without teacher input", "Review the feedback section for specific time management issues"]
-- Recommendations if score ≥ 4: ["No significant mistakes detected — well-executed session"]
+**Criterion 4: Adherence to Lesson Design, Plan, and Time Management**
+- Evaluates: Following lesson structure, time management, smooth transitions
+- Key Indicators: Session duration vs target (45min), activities completed, teacher talk time, student active %, session completion rate
+- Comments: Flags over-long explanations before high-scoring activities, insufficient prep before low-scoring activities, transition delays between activities.
 
-**Criterion 7: Distinct Moments**
-- Base score: 3
-- Adjustments:
-  - wentWellCount ≥ 5: +0.5 (evidence: "{N} positive observations recorded")
-  - wentWellCount ≥ 8: additional +0.5
-  - bestQuestionCorrectness ≥ 90%: +0.5 (evidence: "Best question achieved {X}% correctness — outstanding comprehension")
-  - highTemperature (≥0.7) AND positiveSentiment (≥60%): +0.5 (evidence: "Combination of high temperature and positive sentiment indicates an engaging session")
-- Recommendations if score < 4: ["Create memorable learning moments through stories or real-world connections", "Celebrate student successes publicly to boost motivation"]
-- Recommendations if score ≥ 4: ["Continue creating impactful teaching moments"]
+**Criterion 5: Teacher Errors During Instruction and Explanation**
+- Evaluates: Instructional errors, their impact on learning
+- Base score: 4 (benefit of the doubt)
+- Key Indicators: Teacher talk during exit ticket, teacher talk during activities, low correctness after long explanation
+- Comments: Lists each detected error with specific timestamps, topics discussed, and impact assessment. Flags cases where long explanations still resulted in low correctness.
 
-**Criterion 8: Overall Session & Tutor Rating**
-- Score = weighted average of criteria 1–7, rounded to nearest 0.5
-- Evidence:
-  - score ≥ 4: "Strong session overall — most criteria were met or exceeded"
-  - score ≥ 3: "Acceptable session with room for improvement in specific areas"
-  - score < 3: "The session needs significant improvement across multiple criteria"
-  - Lists strong areas (score ≥ 4) and weak areas (score < 3) by English name
-- Recommendations: Lists weak areas to focus on, or encouragement to maintain quality
-- Notes: "Average: {X}/5 | Strong: {N} | Weak: {N}"
+**Criterion 6: Moments of Distinction**
+- Evaluates: Standout positive moments from the teacher
+- Key Indicators: Positive observations count, best question correctness, temperature+sentiment combination
+- Comments: Lists activities with high correctness and what the teacher taught before them, good pedagogical decisions, pacing achievements.
 
-**Criterion 9: Session Objectives Achieved**
-- Base score: 3
-- Adjustments:
-  - overallCorrectness ≥ 70%: +0.5 (evidence: "Correctness rate {X}% — learning objectives largely achieved")
-  - overallCorrectness ≥ 50%: neutral (evidence: "Correctness rate {X}% — partially achieved")
-  - overallCorrectness < 50%: -0.5 (evidence: "Correctness rate {X}% — objectives not sufficiently met")
-  - sessionCompletedPercent ≥ 80%: +0.5 (evidence: "Session completion {X}% — most students stayed engaged")
-  - sessionCompletedPercent < 60%: -0.5 (evidence: "Only {X}% session completion — many students lost engagement")
-  - allActivitiesCompleted: +0.5 (evidence: "All planned activities were completed")
-  - exitTicketCorrectness ≥ 70%: +0.5 (evidence: "Exit ticket correctness {X}% — strong final assessment")
-  - exitTicketCorrectness < 50%: -0.5 (evidence: "Exit ticket correctness only {X}% — objectives not solidified by end of session")
-- Recommendations if score < 4: Address specific shortcomings (low correctness → review unmet objectives; low exit ticket → use results to plan review)
-- Recommendations if score ≥ 4: ["Learning objectives achieved successfully"]
-- Notes: "Correctness: {X}%, Completion: {Y}%, Exit Ticket: {Z}%"
+**Criterion 7: General Evaluation and Quality**
+- Score = average of criteria 1–6, rounded to nearest 0.5
+- Key Indicators: Lists strengths and areas for improvement
+- Comments: Full activity-by-activity summary showing correctness, pre-teaching duration/topics, whether teacher talked during activity, and confusion events.
 
-**QA Summary** (displayed in header card): totalStudents, totalQuestions, overallCorrectness, sessionTemperature, teachingTimeMin, teacherTalkMin, studentActivePercent, activitiesCompleted, chatParticipation. Do NOT display responseRate in the summary card.
+**QA Summary** (displayed in header card): totalStudents, totalQuestions, overallCorrectness, sessionTemperature, teachingTimeMin, teacherTalkMin, studentActivePercent, activitiesCompleted, chatParticipation.
+
+**Activity Timeline** (displayed below criteria): Visual cards for each activity showing Before/During/After teaching context with topics, timestamps, correctness, confusion alerts, and specific insights.
 
 ---
 
@@ -460,16 +405,22 @@ Each criterion returns: id, nameEn (English name), score (number), evidence (str
      - Overall score displayed as "{X}/5"
      - ScoreBadge: ≥4 → "Excellent" (green), ≥3 → "Acceptable" (amber), <3 → "Needs Improvement" (red)
      - Summary metrics grid: total questions, teacher talk time, student active %
-   - 9 expandable criteria rows, each showing:
+   - 7 expandable criteria rows (rubric-aligned), each showing:
      - Criterion number (circled)
-     - English criterion name
+     - English criterion name (e.g., "Content Mastery and Explanation")
      - ScoreBadge with color
      - ScoreStars (5-star display with half-star support using Star/StarHalf icons)
    - Expanded view shows:
-     - "Evidence" — bullet list of evidence strings
+     - "Key Indicators" — bullet list of evidence strings
+     - "Transcript Observations" — comments backed by specific timestamps and transcript content
      - "Recommendations" — list with arrow icons
      - Notes line in muted text
    - Accordion behavior: only one criterion expanded at a time
+   - **Activity Timeline** section below criteria showing per-activity cards with:
+     - Activity label + time range + correctness percentage
+     - Before/During/After teaching context with topics and duration
+     - Confusion alerts from student chat
+     - Specific insights correlating teaching with results
 
 7. **Additional Observations** — "Additional Observations"
    - Remaining pedagogy feedback items not shown in earlier sections
@@ -517,9 +468,11 @@ Each criterion returns: id, nameEn (English name), score (number), evidence (str
 | Section: time management | Time Management |
 | Section: QA | Session Quality Evaluation |
 | QA: overall | Overall Evaluation |
-| QA: evidence | Evidence |
+| QA: evidence | Key Indicators |
+| QA: comments | Transcript Observations |
 | QA: recommendations | Recommendations |
 | QA: notes | Notes |
+| QA: activity timeline | Activity Timeline |
 | Section: observations | Additional Observations |
 | Label: planned | Planned |
 | Label: details | Details |

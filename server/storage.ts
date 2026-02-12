@@ -218,7 +218,7 @@ export class DatabaseStorage implements IStorage {
     const sessionTemperature = session?.sessionTemperature ?? 0;
 
     const activitiesWithCorrectness = activities.map(a => {
-      const canonicalType = this.classifyActivityType(a.activityType, a.totalMcqs);
+      const canonicalType = this.classifyActivityType(a.activityType || '', a.totalMcqs);
       return {
         activityId: a.activityId,
         activityType: canonicalType,
@@ -280,6 +280,135 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  private getTranscriptForTimeRange(
+    sorted: { startSec: number; endSec: number; text: string }[],
+    rangeStartSec: number,
+    rangeEndSec: number
+  ): { texts: string[]; totalSec: number; topics: string } {
+    const overlapping = sorted.filter(t => t.startSec < rangeEndSec && t.endSec > rangeStartSec);
+    let totalSec = 0;
+    for (const t of overlapping) {
+      const s = Math.max(t.startSec, rangeStartSec);
+      const e = Math.min(t.endSec, rangeEndSec);
+      if (e > s) totalSec += (e - s);
+    }
+    const texts = overlapping.map(t => t.text);
+    const topics = this.extractTopics(texts);
+    return { texts, totalSec, topics };
+  }
+
+  private buildActivityTimeline(
+    activities: any[],
+    sorted: { startSec: number; endSec: number; text: string }[],
+    chats: any[]
+  ): any[] {
+    const happened = activities
+      .filter(a => a.activityHappened && a.startTime && a.endTime)
+      .map(a => ({
+        ...a,
+        startSec: this.parseTimeToSeconds(a.startTime),
+        endSec: this.parseTimeToSeconds(a.endTime),
+      }))
+      .filter(a => a.startSec !== null && a.endSec !== null && a.startSec > 0 && a.endSec > 0)
+      .map(a => ({ ...a, startSec: a.startSec as number, endSec: a.endSec as number }))
+      .sort((a, b) => a.startSec - b.startSec);
+
+    const typeLabels: Record<string, string> = {
+      SECTION_CHECK: "Section Check",
+      EXIT_TICKET: "Exit Ticket",
+      TEAM_EXERCISE: "Team Exercise",
+    };
+
+    const timeline: any[] = [];
+    const formatTime = (sec: number) => {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    };
+
+    for (let i = 0; i < happened.length; i++) {
+      const act = happened[i];
+      const prevEndSec = i > 0 ? happened[i - 1].endSec : (sorted.length > 0 ? sorted[0].startSec : act.startSec);
+      const preActivity = this.getTranscriptForTimeRange(sorted, prevEndSec, act.startSec);
+      const duringActivity = this.getTranscriptForTimeRange(sorted, act.startSec, act.endSec);
+      const postEndSec = i + 1 < happened.length ? happened[i + 1].startSec : act.endSec + 180;
+      const postActivity = this.getTranscriptForTimeRange(sorted, act.endSec, postEndSec);
+
+      const chatsDuring = chats.filter((c: any) => {
+        if (c.userType !== 'STUDENT') return false;
+        const ts = this.parseTimeToSeconds(c.createdAtTs || '');
+        return ts !== null && ts >= act.startSec && ts <= act.endSec;
+      });
+      const confusionDuring = this.detectChatConfusion(chats, act.startSec, act.endSec);
+
+      const correctPercent = act.correctness?.percent ?? 0;
+      const label = typeLabels[act.activityType] || act.activityType;
+
+      const entry: any = {
+        activityId: act.activityId,
+        activityType: act.activityType,
+        label,
+        startTime: formatTime(act.startSec),
+        endTime: formatTime(act.endSec),
+        correctPercent,
+        preTeaching: {
+          durationMin: Math.round(preActivity.totalSec / 60 * 10) / 10,
+          topics: preActivity.topics,
+          sampleText: preActivity.texts.slice(0, 3).join(' ').substring(0, 200),
+        },
+        duringTeaching: {
+          teacherTalking: duringActivity.totalSec > 0,
+          durationMin: Math.round(duringActivity.totalSec / 60 * 10) / 10,
+          topics: duringActivity.topics,
+        },
+        postTeaching: {
+          durationMin: Math.round(postActivity.totalSec / 60 * 10) / 10,
+          topics: postActivity.topics,
+        },
+        studentChatsDuring: chatsDuring.length,
+        confusionDetected: confusionDuring.confused,
+        confusionExamples: confusionDuring.examples,
+      };
+
+      const insights: string[] = [];
+
+      if (preActivity.totalSec > 0) {
+        insights.push(`Before this ${label}, the teacher spent ${entry.preTeaching.durationMin} min teaching: ${preActivity.topics}.`);
+      } else {
+        insights.push(`No teacher explanation was detected before this ${label}.`);
+      }
+
+      if (correctPercent >= 80) {
+        insights.push(`Students scored ${correctPercent}% — the explanation on "${preActivity.topics}" was effective.`);
+      } else if (correctPercent >= 50) {
+        insights.push(`Students scored ${correctPercent}% — the explanation on "${preActivity.topics}" was partially effective. Some students may need reinforcement.`);
+      } else if (correctPercent > 0) {
+        insights.push(`Students scored only ${correctPercent}% — the explanation on "${preActivity.topics}" was not effective. The concept needs re-teaching with a different approach.`);
+      }
+
+      if (duringActivity.totalSec > 0 && act.activityType === 'EXIT_TICKET') {
+        insights.push(`The teacher was talking for ${entry.duringTeaching.durationMin} min during the exit ticket about "${duringActivity.topics}" — this compromises assessment validity.`);
+      } else if (duringActivity.totalSec > 0) {
+        insights.push(`The teacher was talking for ${entry.duringTeaching.durationMin} min during this activity about "${duringActivity.topics}".`);
+      }
+
+      if (confusionDuring.confused) {
+        insights.push(`Students showed confusion during this activity: ${confusionDuring.examples.join('; ')}`);
+      }
+
+      if (postActivity.totalSec > 0 && correctPercent < 50) {
+        insights.push(`After the activity, the teacher spent ${entry.postTeaching.durationMin} min re-explaining: ${postActivity.topics}. Given the low score, this was appropriate.`);
+      } else if (postActivity.totalSec > 60 && correctPercent > 75) {
+        insights.push(`After the activity (${correctPercent}% correct), the teacher spent ${entry.postTeaching.durationMin} min explaining. Since most students understood, this time could be reduced.`);
+      }
+
+      entry.insights = insights;
+      timeline.push(entry);
+    }
+    return timeline;
+  }
+
   private computeQAEvaluation(
     session: any,
     activities: any[],
@@ -330,7 +459,7 @@ export class DatabaseStorage implements IStorage {
     }
     const totalTeacherTalkMin = Math.round(totalTeacherTalkSec / 60 * 10) / 10;
 
-    const continuousSegments: { durationSec: number }[] = [];
+    const continuousSegments: { startSec: number; endSec: number; durationSec: number }[] = [];
     if (sorted.length > 0) {
       let segStart: number = sorted[0].startSec;
       let segEnd: number = sorted[0].endSec;
@@ -339,12 +468,12 @@ export class DatabaseStorage implements IStorage {
         if (gap <= 5) {
           segEnd = Math.max(segEnd, sorted[i].endSec);
         } else {
-          continuousSegments.push({ durationSec: segEnd - segStart });
+          continuousSegments.push({ startSec: segStart, endSec: segEnd, durationSec: segEnd - segStart });
           segStart = sorted[i].startSec;
           segEnd = sorted[i].endSec;
         }
       }
-      continuousSegments.push({ durationSec: segEnd - segStart });
+      continuousSegments.push({ startSec: segStart, endSec: segEnd, durationSec: segEnd - segStart });
     }
     const longSegments = continuousSegments.filter(s => s.durationSec > 120);
     const longestSegMin = continuousSegments.length > 0
@@ -355,9 +484,20 @@ export class DatabaseStorage implements IStorage {
       ? Math.round(((teachingTime - totalTeacherTalkMin) / teachingTime) * 100)
       : 0;
 
-    // 1. Content Mastery (إتقان المحتوى والشرح)
+    const activityTimeline = this.buildActivityTimeline(activities, sorted, chats);
+
+    const formatTime = (sec: number) => {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    };
+
+    // === 1. Content Mastery and Explanation ===
     let contentScore = 3;
     const evidence1: string[] = [];
+    const comments1: string[] = [];
+
     if (totalQuestions >= 10) { contentScore += 0.5; evidence1.push(`Session included ${totalQuestions} questions — good coverage`); }
     else if (totalQuestions >= 6) { evidence1.push(`Session included ${totalQuestions} questions`); }
     else { contentScore -= 0.5; evidence1.push(`Only ${totalQuestions} questions — limited content coverage`); }
@@ -371,24 +511,45 @@ export class DatabaseStorage implements IStorage {
     if (highQs >= totalQuestions * 0.5) { contentScore += 0.5; evidence1.push(`${highQs}/${totalQuestions} questions above 70% — content delivered well`); }
     if (lowQs >= totalQuestions * 0.3) { contentScore -= 0.5; evidence1.push(`${lowQs}/${totalQuestions} questions below 40% — several concepts not well understood`); }
 
+    for (const atl of activityTimeline) {
+      if (atl.preTeaching.durationMin > 0) {
+        const effectiveness = atl.correctPercent >= 70 ? "effective" : atl.correctPercent >= 50 ? "partially effective" : "not effective";
+        comments1.push(`Before ${atl.label} (${atl.startTime}): Teacher taught "${atl.preTeaching.topics}" for ${atl.preTeaching.durationMin} min. Result: ${atl.correctPercent}% correct — explanation was ${effectiveness}.`);
+      }
+      if (atl.correctPercent > 0 && atl.correctPercent < 40) {
+        comments1.push(`${atl.label} scored only ${atl.correctPercent}%. The teacher's explanation of "${atl.preTeaching.topics}" before this activity did not achieve comprehension. A different teaching approach (examples, analogies, visual aids) is needed.`);
+      }
+    }
+
+    if (lowQs > 0) {
+      const weakTopics = activityTimeline
+        .filter(a => a.correctPercent < 40 && a.preTeaching.topics !== 'General teaching')
+        .map(a => a.preTeaching.topics);
+      if (weakTopics.length > 0) {
+        comments1.push(`Weak topics needing re-explanation: ${Array.from(new Set(weakTopics)).join(', ')}.`);
+      }
+    }
+
     contentScore = Math.max(1, Math.min(5, Math.round(contentScore * 2) / 2));
     criteria.push({
       id: 1,
       nameAr: "إتقان المحتوى والشرح",
-      nameEn: "Instructional & Content Mastery",
+      nameEn: "Content Mastery and Explanation",
       score: contentScore,
       evidence: evidence1,
+      comments: comments1,
       recommendations: contentScore < 4 ? [
-        lowQs > 0 ? "Re-explain concepts that scored below 40% using different approaches" : "",
+        lowQs > 0 ? "Re-explain concepts that scored below 40% using different approaches (examples, analogies)" : "",
         overallCorrectness < 60 ? "Slow down explanations and add more worked examples before checking understanding" : "",
         totalQuestions < 8 ? "Add more comprehension check questions during the session" : "",
-      ].filter(Boolean) : ["Maintain current teaching quality level"],
+      ].filter(Boolean) : ["Explanations are consistently accurate and clear. Maintain current teaching quality level."],
       notes: `${totalQuestions} questions, overall correctness ${overallCorrectness}%, ${highQs} strong / ${lowQs} weak`,
     });
 
-    // 2. Student Engagement (دعم الطلاب وتحفيزهم)
+    // === 2. Student Support and Motivation ===
     let engScore = 3;
     const evidence2: string[] = [];
+    const comments2: string[] = [];
 
     if (responseRate >= 85) { engScore += 0.5; evidence2.push(`Response rate ${responseRate}% — high participation`); }
     else if (responseRate >= 70) { evidence2.push(`Response rate ${responseRate}%`); }
@@ -407,54 +568,109 @@ export class DatabaseStorage implements IStorage {
     else if (positivePercent >= 60) { evidence2.push(`Positive sentiment ${positivePercent}%`); }
     else { engScore -= 0.5; evidence2.push(`Only ${positivePercent}% positive sentiment — students may not be enjoying the session`); }
 
+    const confusedActivities = activityTimeline.filter(a => a.confusionDetected);
+    if (confusedActivities.length > 0) {
+      for (const ca of confusedActivities) {
+        comments2.push(`During ${ca.label} (${ca.startTime}), students showed confusion: ${ca.confusionExamples.join('; ')}. The teacher should pause and address these questions.`);
+      }
+    }
+
+    const unansweredStudentQuestions = studentChats.filter(c => {
+      const chatTs = this.parseTimeToSeconds(c.createdAtTs || '');
+      if (chatTs === null) return false;
+      const hasReply = teacherChats.some(r => {
+        const rTs = this.parseTimeToSeconds(r.createdAtTs || '');
+        return rTs !== null && rTs > chatTs && rTs < chatTs + 120;
+      });
+      return !hasReply;
+    });
+    if (unansweredStudentQuestions.length >= 3) {
+      comments2.push(`${unansweredStudentQuestions.length} student messages in chat appeared to go unanswered — the teacher should monitor and respond to student questions.`);
+      engScore -= 0.5;
+    }
+
+    if (teacherChats.length >= 3) {
+      comments2.push(`The teacher sent ${teacherChats.length} messages in chat, showing active communication and encouragement.`);
+    } else if (teacherChats.length === 0) {
+      comments2.push(`The teacher did not send any chat messages — encouraging participation through chat helps build connection.`);
+    }
+
     engScore = Math.max(1, Math.min(5, Math.round(engScore * 2) / 2));
     criteria.push({
       id: 2,
       nameAr: "دعم الطلاب وتحفيزهم",
-      nameEn: "Student Engagement",
+      nameEn: "Student Support and Motivation",
       score: engScore,
       evidence: evidence2,
+      comments: comments2,
       recommendations: engScore < 4 ? [
         responseRate < 80 ? "Encourage all students to respond to polls — give them enough time" : "",
         chatParticipationRate < 15 ? "Ask students to reply in chat for comprehension check questions" : "",
         sessionTemperature < 70 ? "Increase engagement using more interactive elements and positive reinforcement" : "",
-      ].filter(Boolean) : ["Continue reinforcing student engagement"],
-      notes: `${totalStudents} students, response rate ${responseRate}%, temperature ${sessionTemperature}%`,
+        confusedActivities.length > 0 ? "When students express confusion in chat, pause and address their questions before continuing" : "",
+      ].filter(Boolean) : ["Continue reinforcing student engagement and motivation"],
+      notes: `${totalStudents} students, response rate ${responseRate}%, temperature ${sessionTemperature}%, ${confusedActivities.length} confusion events`,
     });
 
-    // 3. Tutor Communication (التواصل وحضور المعلّم)
+    // === 3. Communication and Teacher Presence ===
     let commScore = 3;
     const evidence3: string[] = [];
+    const comments3: string[] = [];
 
     if (teacherChats.length >= 5) { commScore += 0.5; evidence3.push(`The teacher sent ${teacherChats.length} messages — effective communication`); }
     else if (teacherChats.length >= 1) { evidence3.push(`The teacher sent ${teacherChats.length} messages`); }
     else { commScore -= 0.5; evidence3.push("The teacher did not use chat to communicate with students"); }
 
-    if (longSegments.length === 0) { commScore += 0.5; evidence3.push(`All talk segments under 2 minutes — good pacing and interaction`); }
-    else { commScore -= 0.5; evidence3.push(`${longSegments.length} talk segments exceeded 2 minutes — should break with interaction`); }
+    if (longSegments.length === 0) {
+      commScore += 0.5;
+      evidence3.push(`All talk segments under 2 minutes — good pacing and interaction`);
+      comments3.push(`The teacher maintains good variation in delivery, breaking explanations with interaction points. This keeps students attentive.`);
+    } else {
+      commScore -= 0.5;
+      evidence3.push(`${longSegments.length} talk segments exceeded 2 minutes — should break with interaction`);
+      for (const seg of longSegments.slice(0, 3)) {
+        const segTopics = this.extractTopics(
+          sorted.filter(t => t.startSec >= seg.startSec && t.endSec <= seg.endSec).map(t => t.text)
+        );
+        const dMin = Math.round(seg.durationSec / 60 * 10) / 10;
+        comments3.push(`Long uninterrupted talk: ${formatTime(seg.startSec)}–${formatTime(seg.endSec)} (${dMin} min) about "${segTopics}". Break this with a student check-in or chat prompt.`);
+      }
+    }
 
     if (positivePercent >= 75) { commScore += 0.5; evidence3.push(`Positive sentiment ${positivePercent}% indicates good relationship with students`); }
     else if (positivePercent < 60) { commScore -= 0.5; evidence3.push(`Low positive sentiment (${positivePercent}%) may indicate communication issues`); }
+
+    const toneVariation = continuousSegments.length > 0 ? continuousSegments.length : 0;
+    if (toneVariation >= 8) {
+      comments3.push(`The teacher had ${toneVariation} distinct talk segments, showing good variation in delivery pace.`);
+    } else if (toneVariation <= 3 && sorted.length > 10) {
+      comments3.push(`Only ${toneVariation} distinct talk segments detected — the teacher may be delivering in long monotonous blocks without enough breaks.`);
+    }
 
     commScore = Math.max(1, Math.min(5, Math.round(commScore * 2) / 2));
     criteria.push({
       id: 3,
       nameAr: "التواصل وحضور المعلّم",
-      nameEn: "Tutor Communication",
+      nameEn: "Communication and Teacher Presence",
       score: commScore,
       evidence: evidence3,
+      comments: comments3,
       recommendations: commScore < 4 ? [
         teacherChats.length < 3 ? "Engage more with student questions in chat" : "",
         longSegments.length > 0 ? "Break long talk segments with student interaction every 2 minutes" : "",
-      ].filter(Boolean) : ["Communication style is effective"],
-      notes: `${teacherChats.length} teacher messages, longest segment ${longestSegMin} min`,
+        "Vary tone and energy levels throughout the session to maintain student attention",
+      ].filter(Boolean) : ["Communication is clear and energetic with strong virtual presence"],
+      notes: `${teacherChats.length} teacher messages, longest segment ${longestSegMin} min, ${toneVariation} talk segments`,
     });
 
-    // 4. Time Management (إدارة الوقت والخطة التعليمية)
+    // === 4. Adherence to Lesson Design, Plan, and Time Management ===
     let timeScore = 3;
     const evidence4: string[] = [];
+    const comments4: string[] = [];
     const scheduledDuration = 45;
     const actualDuration = Math.round(teachingTime);
+    const totalActivities = activities.length;
+    const completedActivities = happenedActivities.length;
 
     if (actualDuration >= scheduledDuration - 5 && actualDuration <= scheduledDuration + 10) {
       timeScore += 0.5; evidence4.push(`Session lasted ${actualDuration} min — within expected ${scheduledDuration} min`);
@@ -462,6 +678,14 @@ export class DatabaseStorage implements IStorage {
       timeScore -= 0.5; evidence4.push(`Session only ${actualDuration} min — shorter than scheduled ${scheduledDuration} min`);
     } else {
       evidence4.push(`Session lasted ${actualDuration} min vs scheduled ${scheduledDuration} min — exceeded time`);
+    }
+
+    if (completedActivities === totalActivities) {
+      timeScore += 0.5; evidence4.push(`All ${totalActivities} activities completed — lesson plan fully executed`);
+    } else {
+      const actCompRate = Math.round((completedActivities / totalActivities) * 100);
+      if (actCompRate >= 80) { evidence4.push(`${completedActivities}/${totalActivities} activities completed (${actCompRate}%)`); }
+      else { timeScore -= 0.5; evidence4.push(`Only ${completedActivities}/${totalActivities} activities completed (${actCompRate}%) — lesson plan not fully executed`); }
     }
 
     if (totalTeacherTalkMin <= 15) {
@@ -473,136 +697,172 @@ export class DatabaseStorage implements IStorage {
     }
 
     if (studentActivePercent >= 60) {
-      timeScore += 0.5; evidence4.push(`${studentActivePercent}% of time was student activity — excellent balance`);
+      evidence4.push(`${studentActivePercent}% of time was student activity — excellent balance`);
     } else if (studentActivePercent >= 45) {
       evidence4.push(`${studentActivePercent}% student activity time`);
     } else {
       timeScore -= 0.5; evidence4.push(`Only ${studentActivePercent}% student activity time — teacher-dominated session`);
     }
 
+    const avgLearningTimeMin = Math.round(avgLearningTime * 10) / 10;
+    if (sessionCompletedPercent >= 80) {
+      evidence4.push(`Session completion rate ${sessionCompletedPercent}% — students kept up with the pace`);
+    } else if (sessionCompletedPercent < 60) {
+      timeScore -= 0.5; evidence4.push(`Only ${sessionCompletedPercent}% session completion — pacing may be too fast`);
+    }
+
+    for (const atl of activityTimeline) {
+      if (atl.preTeaching.durationMin > 3 && atl.correctPercent >= 75) {
+        comments4.push(`${atl.preTeaching.durationMin} min of explanation before ${atl.label} (${atl.startTime}), but students scored ${atl.correctPercent}% — explanation was longer than needed. Consider reducing to allow more activity time.`);
+      }
+      if (atl.postTeaching.durationMin > 2 && atl.correctPercent >= 75) {
+        comments4.push(`${atl.postTeaching.durationMin} min of explanation after ${atl.label} (${atl.correctPercent}% correct) — since students scored well, this post-activity time could be shortened. Move on quickly when comprehension is high.`);
+      }
+      if (atl.preTeaching.durationMin < 0.5 && atl.correctPercent < 50) {
+        comments4.push(`Only ${atl.preTeaching.durationMin} min of explanation before ${atl.label} (${atl.startTime}), which scored ${atl.correctPercent}%. Insufficient preparation time may have contributed to the low score.`);
+      }
+    }
+
+    const transitionGaps: string[] = [];
+    for (let i = 0; i < activityTimeline.length - 1; i++) {
+      const current = activityTimeline[i];
+      const next = activityTimeline[i + 1];
+      const currentEndSec = this.parseTimeToSeconds(current.endTime) || 0;
+      const nextStartSec = this.parseTimeToSeconds(next.startTime) || 0;
+      const gapMin = Math.round((nextStartSec - currentEndSec) / 60 * 10) / 10;
+      if (gapMin > 5) {
+        transitionGaps.push(`${gapMin} min gap between ${current.label} and ${next.label}`);
+      }
+    }
+    if (transitionGaps.length > 0) {
+      comments4.push(`Transition delays detected: ${transitionGaps.join('; ')}. Smooth transitions improve pacing.`);
+    }
+
     timeScore = Math.max(1, Math.min(5, Math.round(timeScore * 2) / 2));
     criteria.push({
       id: 4,
-      nameAr: "إدارة الوقت والخطة التعليمية",
-      nameEn: "Time Management",
+      nameAr: "الالتزام بتصميم وخطة الدرس وإدارة الوقت",
+      nameEn: "Adherence to Lesson Design, Plan, and Time Management",
       score: timeScore,
       evidence: evidence4,
+      comments: comments4,
       recommendations: timeScore < 4 ? [
         totalTeacherTalkMin > 15 ? "Reduce teacher talk to under 15 min to allow more student practice time" : "",
         studentActivePercent < 50 ? "Increase student activity time — aim for at least 50% of the session" : "",
-      ].filter(Boolean) : ["Time management is well-balanced"],
-      notes: `Session ${actualDuration} min, talk ${totalTeacherTalkMin} min, ${studentActivePercent}% student time`,
-    });
-
-    // 5. Session Pacing (الإلتزام بتصميم وخطة الدرس وتوزيع الوقت)
-    let paceScore = 3;
-    const evidence5: string[] = [];
-    const totalActivities = activities.length;
-    const completedActivities = happenedActivities.length;
-
-    if (completedActivities === totalActivities) {
-      paceScore += 0.5; evidence5.push(`All ${totalActivities} activities completed — lesson plan fully executed`);
-    } else {
-      const completionRate = Math.round((completedActivities / totalActivities) * 100);
-      if (completionRate >= 80) { evidence5.push(`${completedActivities}/${totalActivities} activities completed (${completionRate}%)`); }
-      else { paceScore -= 0.5; evidence5.push(`Only ${completedActivities}/${totalActivities} activities completed (${completionRate}%) — lesson plan not fully executed`); }
-    }
-
-    if (sessionCompletedPercent >= 80) {
-      paceScore += 0.5; evidence5.push(`Session completion rate ${sessionCompletedPercent}% — students kept up`);
-    } else if (sessionCompletedPercent >= 60) {
-      evidence5.push(`Session completion rate ${sessionCompletedPercent}%`);
-    } else {
-      paceScore -= 0.5; evidence5.push(`Only ${sessionCompletedPercent}% session completion — pacing may be too fast`);
-    }
-
-    const avgLearningTimeMin = Math.round(avgLearningTime * 10) / 10;
-    if (avgLearningTimeMin >= teachingTime * 0.7) {
-      paceScore += 0.5; evidence5.push(`Average student learning time ${avgLearningTimeMin} min — good pacing`);
-    } else {
-      evidence5.push(`Average student learning time ${avgLearningTimeMin} min out of ${Math.round(teachingTime)} min`);
-    }
-
-    paceScore = Math.max(1, Math.min(5, Math.round(paceScore * 2) / 2));
-    criteria.push({
-      id: 5,
-      nameAr: "الإلتزام بتصميم وخطة الدرس وتوزيع الوقت",
-      nameEn: "Session Pacing",
-      score: paceScore,
-      evidence: evidence5,
-      recommendations: paceScore < 4 ? [
         completedActivities < totalActivities ? "Ensure all planned activities are completed within session time" : "",
         sessionCompletedPercent < 70 ? "Slow down pacing so more students can keep up" : "",
-      ].filter(Boolean) : ["Pacing is well-calibrated"],
-      notes: `${completedActivities}/${totalActivities} activities, ${sessionCompletedPercent}% completion, avg ${avgLearningTimeMin} min`,
+      ].filter(Boolean) : ["Time management is effective with smooth transitions between activities"],
+      notes: `Session ${actualDuration} min, talk ${totalTeacherTalkMin} min, ${completedActivities}/${totalActivities} activities, ${studentActivePercent}% student time, avg learning ${avgLearningTimeMin} min`,
     });
 
-    // 6. Mistakes & Impact (الاخطاء و تأثيرها على الدرس)
-    let mistakeScore = 4;
-    const evidence6: string[] = [];
+    // === 5. Teacher Errors During Instruction and Explanation ===
+    let errorScore = 4;
+    const evidence5: string[] = [];
+    const comments5: string[] = [];
+    let errorCount = 0;
 
     const exitTicketAnalysis = activityAnalyses.find((a: any) => a.activityType === 'EXIT_TICKET');
     const exitTicketInstance = exitTicketAnalysis?.instances?.[0];
     if (exitTicketInstance?.teacherTalkDuring) {
-      mistakeScore -= 1;
-      evidence6.push(`The teacher was talking during the exit ticket for ${exitTicketInstance.teacherTalkOverlapMin} min — students should answer independently`);
+      errorCount++;
+      errorScore -= 1;
+      const etTopics = exitTicketInstance.teacherTalkTopics || 'unknown topics';
+      evidence5.push(`MAJOR: The teacher was talking during the exit ticket for ${exitTicketInstance.teacherTalkOverlapMin} min — students should answer independently`);
+      comments5.push(`During the exit ticket, the teacher was discussing "${etTopics}" for ${exitTicketInstance.teacherTalkOverlapMin} min. This is a major error because exit tickets must be completed independently to accurately measure student comprehension. The teacher's talking may have given hints or distracted students.`);
     } else {
-      evidence6.push("The teacher did not talk during the exit ticket — correct protocol followed");
+      evidence5.push("The teacher did not talk during the exit ticket — correct protocol followed");
+    }
+
+    for (const atl of activityTimeline) {
+      if (atl.duringTeaching.teacherTalking && atl.activityType !== 'EXIT_TICKET' && atl.duringTeaching.durationMin > 0.5) {
+        errorCount++;
+        comments5.push(`The teacher talked for ${atl.duringTeaching.durationMin} min during ${atl.label} (${atl.startTime}) about "${atl.duringTeaching.topics}". Activities should be student-independent unless clarifying instructions.`);
+      }
+    }
+
+    const lowCorrAfterLongExplain = activityTimeline.filter(a => a.preTeaching.durationMin > 2 && a.correctPercent < 40);
+    for (const lc of lowCorrAfterLongExplain) {
+      errorCount++;
+      comments5.push(`Despite ${lc.preTeaching.durationMin} min of explanation on "${lc.preTeaching.topics}" before ${lc.label}, students scored only ${lc.correctPercent}%. This suggests the explanation may have been unclear or inaccurate. The teacher may need to verify their understanding of this concept.`);
     }
 
     const tmImprovements = feedback.needsImprovement.filter((f: any) => f.category === 'time_management');
     if (tmImprovements.length >= 3) {
-      mistakeScore -= 0.5;
-      evidence6.push(`${tmImprovements.length} time management issues identified — recurring pattern`);
+      errorScore -= 0.5;
+      evidence5.push(`${tmImprovements.length} time management issues identified — recurring pattern`);
     } else if (tmImprovements.length > 0) {
-      evidence6.push(`${tmImprovements.length} minor time management issues`);
+      evidence5.push(`${tmImprovements.length} minor time management issues`);
     } else {
-      mistakeScore += 0.5;
-      evidence6.push("No major time management errors detected");
+      errorScore += 0.5;
+      evidence5.push("No major time management errors detected");
     }
 
-    mistakeScore = Math.max(1, Math.min(5, Math.round(mistakeScore * 2) / 2));
+    if (errorCount === 0) {
+      comments5.push("No significant instructional errors were detected during this session.");
+    }
+
+    errorScore = Math.max(1, Math.min(5, Math.round(errorScore * 2) / 2));
     criteria.push({
-      id: 6,
-      nameAr: "الاخطاء و تأثيرها على الدرس",
-      nameEn: "Mistakes & Impact",
-      score: mistakeScore,
-      evidence: evidence6,
-      recommendations: mistakeScore < 4 ? [
+      id: 5,
+      nameAr: "أخطاء المعلم أثناء التدريس والشرح",
+      nameEn: "Teacher Errors During Instruction and Explanation",
+      score: errorScore,
+      evidence: evidence5,
+      comments: comments5,
+      recommendations: errorScore < 4 ? [
         exitTicketInstance?.teacherTalkDuring ? "Do not talk during the exit ticket — let students answer independently" : "",
+        errorCount > 0 ? "Review concepts with low correctness and verify your own understanding before re-teaching" : "",
         tmImprovements.length > 0 ? "Review time allocation after each activity based on student correctness rate" : "",
-      ].filter(Boolean) : ["No major errors detected"],
-      notes: exitTicketInstance?.teacherTalkDuring
-        ? `Teacher talked ${exitTicketInstance.teacherTalkOverlapMin} min during exit ticket`
-        : "Exit ticket protocol followed correctly",
+      ].filter(Boolean) : ["No major errors detected — maintain current standards"],
+      notes: `${errorCount} errors detected. ${exitTicketInstance?.teacherTalkDuring ? `Teacher talked ${exitTicketInstance.teacherTalkOverlapMin} min during exit ticket.` : "Exit ticket protocol followed."}`,
     });
 
-    // 7. Distinct Moments (لحظات تميّز من الأستاذ)
+    // === 6. Moments of Distinction ===
     let distinctScore = 3;
-    const evidence7: string[] = [];
+    const evidence6: string[] = [];
+    const comments6: string[] = [];
     const wellCount = feedback.wentWell.length;
 
-    if (wellCount >= 5) { distinctScore += 1; evidence7.push(`${wellCount} positive observations identified — the session had many strong moments`); }
-    else if (wellCount >= 3) { distinctScore += 0.5; evidence7.push(`${wellCount} positive observations`); }
-    else { evidence7.push(`Only ${wellCount} positive observations — few distinct moments`); }
+    if (wellCount >= 5) { distinctScore += 1; evidence6.push(`${wellCount} positive observations identified — the session had many strong moments`); }
+    else if (wellCount >= 3) { distinctScore += 0.5; evidence6.push(`${wellCount} positive observations`); }
+    else { evidence6.push(`Only ${wellCount} positive observations — few distinct moments`); }
 
     const bestQuestion = (pollStats.byQuestion || []).reduce((best: any, q: any) => (!best || q.percent > best.percent) ? q : best, null);
     if (bestQuestion && bestQuestion.percent >= 75) {
       distinctScore += 0.5;
-      evidence7.push(`Strongest question achieved ${bestQuestion.percent}% correctness — effective teaching for this concept`);
+      evidence6.push(`Strongest question achieved ${bestQuestion.percent}% correctness — effective teaching for this concept`);
     }
 
     if (sessionTemperature >= 80 && positivePercent >= 80) {
-      evidence7.push(`High temperature (${sessionTemperature}%) with ${positivePercent}% positive sentiment — students were enthusiastic`);
+      evidence6.push(`High temperature (${sessionTemperature}%) with ${positivePercent}% positive sentiment — students were enthusiastic`);
+    }
+
+    const highCorrActivities = activityTimeline.filter(a => a.correctPercent >= 80);
+    for (const hca of highCorrActivities) {
+      comments6.push(`${hca.label} (${hca.startTime}) achieved ${hca.correctPercent}% correctness after teaching "${hca.preTeaching.topics}" for ${hca.preTeaching.durationMin} min — this is a moment of effective teaching. The explanation was clear and well-paced.`);
+    }
+
+    const goodFeedback = feedback.wentWell.filter(f => f.category === 'student_stage');
+    for (const gf of goodFeedback) {
+      comments6.push(`Good decision: ${gf.detail}`);
+    }
+
+    if (longSegments.length === 0 && totalTeacherTalkMin <= 15) {
+      comments6.push(`The teacher maintained excellent pacing throughout — all talk segments under 2 minutes and total talk time within the 15-minute limit. This is a significant strength.`);
+    }
+
+    if (comments6.length === 0) {
+      comments6.push("No standout moments of distinction were identified in this session. Aim to create memorable teaching moments through real-world examples, student celebration, or creative explanations.");
     }
 
     distinctScore = Math.max(1, Math.min(5, Math.round(distinctScore * 2) / 2));
     criteria.push({
-      id: 7,
-      nameAr: "لحظات تميّز من الأستاذ",
-      nameEn: "Distinct Moments",
+      id: 6,
+      nameAr: "لحظات تميّز من المعلم",
+      nameEn: "Moments of Distinction",
       score: distinctScore,
-      evidence: evidence7,
+      evidence: evidence6,
+      comments: comments6,
       recommendations: distinctScore < 4 ? [
         "Create memorable learning moments through stories or real-world connections",
         "Celebrate student successes publicly to boost motivation",
@@ -610,70 +870,38 @@ export class DatabaseStorage implements IStorage {
       notes: `${wellCount} positive observations, best question at ${bestQuestion?.percent || 0}%`,
     });
 
-    // 8. Overall Rating (التقييم العام والجودة للحصة والمدرس)
-    const avgOfAll = Math.round((contentScore + engScore + commScore + timeScore + paceScore + mistakeScore + distinctScore) / 7 * 2) / 2;
+    // === 7. General Evaluation and Quality ===
+    const avgOfAll = Math.round((contentScore + engScore + commScore + timeScore + errorScore + distinctScore) / 6 * 2) / 2;
     const overallScore = Math.max(1, Math.min(5, avgOfAll));
-    const evidence8: string[] = [];
+    const evidence7: string[] = [];
+    const comments7: string[] = [];
 
-    if (overallScore >= 4) { evidence8.push("Strong session overall — most criteria met or exceeded"); }
-    else if (overallScore >= 3) { evidence8.push("Acceptable session with room for improvement in specific areas"); }
-    else { evidence8.push("The session needs significant improvement across multiple criteria"); }
+    if (overallScore >= 4) { evidence7.push("The session was strong overall — most criteria met or exceeded expectations"); }
+    else if (overallScore >= 3) { evidence7.push("The session met basic expectations with room for improvement in specific areas"); }
+    else { evidence7.push("The session needs significant improvement across multiple criteria"); }
 
-    evidence8.push(`Weighted average across 7 criteria: ${overallScore}/5`);
+    evidence7.push(`Average across 6 criteria: ${overallScore}/5`);
 
     const strongAreas = criteria.filter((c: any) => c.score >= 4).map((c: any) => c.nameEn);
     const weakAreas = criteria.filter((c: any) => c.score < 3).map((c: any) => c.nameEn);
-    if (strongAreas.length > 0) evidence8.push(`Strengths: ${strongAreas.join(', ')}`);
-    if (weakAreas.length > 0) evidence8.push(`Areas for improvement: ${weakAreas.join(', ')}`);
+    if (strongAreas.length > 0) evidence7.push(`Strengths: ${strongAreas.join(', ')}`);
+    if (weakAreas.length > 0) evidence7.push(`Areas for improvement: ${weakAreas.join(', ')}`);
+
+    for (const atl of activityTimeline) {
+      comments7.push(`${atl.label} (${atl.startTime}–${atl.endTime}): ${atl.correctPercent}% correct. Pre-teaching: ${atl.preTeaching.durationMin} min on "${atl.preTeaching.topics}". ${atl.duringTeaching.teacherTalking ? `Teacher talked ${atl.duringTeaching.durationMin} min during activity.` : 'No teacher talk during activity.'} ${atl.confusionDetected ? 'Student confusion detected.' : ''}`);
+    }
 
     criteria.push({
-      id: 8,
-      nameAr: "التقييم العام والجودة للحصة والمدرس",
-      nameEn: "Overall Session & Tutor Rating",
+      id: 7,
+      nameAr: "التقييم العام والجودة",
+      nameEn: "General Evaluation and Quality",
       score: overallScore,
-      evidence: evidence8,
+      evidence: evidence7,
+      comments: comments7,
       recommendations: weakAreas.length > 0
         ? [`Focus on improving: ${weakAreas.join(', ')}`, "Review session recording and compare against evaluation criteria"]
         : ["Continue maintaining high quality across all criteria"],
       notes: `Average: ${overallScore}/5 | Strong: ${strongAreas.length} | Weak: ${weakAreas.length}`,
-    });
-
-    // 9. Session Objectives (قياس مدى تحقيق أهداف الحصة)
-    let objScore = 3;
-    const evidence9: string[] = [];
-
-    if (overallCorrectness >= 70) { objScore += 0.5; evidence9.push(`Overall correctness ${overallCorrectness}% — learning objectives largely achieved`); }
-    else if (overallCorrectness >= 50) { evidence9.push(`Overall correctness ${overallCorrectness}% — partially achieved`); }
-    else { objScore -= 0.5; evidence9.push(`Overall correctness ${overallCorrectness}% — objectives not sufficiently achieved`); }
-
-    if (sessionCompletedPercent >= 80) { objScore += 0.5; evidence9.push(`Session completion ${sessionCompletedPercent}% — most students stayed engaged`); }
-    else if (sessionCompletedPercent < 60) { objScore -= 0.5; evidence9.push(`Only ${sessionCompletedPercent}% session completion — many students lost engagement`); }
-
-    if (completedActivities === totalActivities) {
-      objScore += 0.5; evidence9.push("All planned activities were completed");
-    } else {
-      evidence9.push(`${completedActivities}/${totalActivities} activities completed`);
-    }
-
-    const exitTicketCorrectness = exitTicketInstance?.overallCorrectness?.percent;
-    if (exitTicketCorrectness != null) {
-      if (exitTicketCorrectness >= 70) { objScore += 0.5; evidence9.push(`Exit ticket correctness ${exitTicketCorrectness}% — strong final assessment`); }
-      else if (exitTicketCorrectness >= 50) { evidence9.push(`Exit ticket correctness ${exitTicketCorrectness}%`); }
-      else { objScore -= 0.5; evidence9.push(`Exit ticket correctness only ${exitTicketCorrectness}% — objectives not solidified by end of session`); }
-    }
-
-    objScore = Math.max(1, Math.min(5, Math.round(objScore * 2) / 2));
-    criteria.push({
-      id: 9,
-      nameAr: "قياس مدى تحقيق أهداف الحصة",
-      nameEn: "Session Objectives Achieved",
-      score: objScore,
-      evidence: evidence9,
-      recommendations: objScore < 4 ? [
-        overallCorrectness < 60 ? "Review unmet objectives and plan remediation for the next session" : "",
-        exitTicketCorrectness != null && exitTicketCorrectness < 60 ? "Use exit ticket results to plan review at the start of the next session" : "",
-      ].filter(Boolean) : ["Learning objectives achieved successfully"],
-      notes: `Correctness: ${overallCorrectness}%, Completion: ${sessionCompletedPercent}%, Exit ticket: ${exitTicketCorrectness ?? 'N/A'}%`,
     });
 
     const overallAvg = Math.round(criteria.reduce((s: number, c: any) => s + c.score, 0) / criteria.length * 10) / 10;
@@ -681,6 +909,7 @@ export class DatabaseStorage implements IStorage {
     return {
       criteria,
       overallScore: overallAvg,
+      activityTimeline,
       summary: {
         totalStudents,
         totalQuestions,
@@ -1026,6 +1255,10 @@ export class DatabaseStorage implements IStorage {
       if (ampm === 'PM' && h !== 12) h += 12;
       if (ampm === 'AM' && h === 12) h = 0;
       return h * 3600 + m * 60 + s;
+    }
+    const matchDateHM = timeStr.match(/\d{1,2}\/\d{1,2}\/\d{2,4}\s+(\d{1,2}):(\d{2})$/);
+    if (matchDateHM) {
+      return parseInt(matchDateHM[1]) * 3600 + parseInt(matchDateHM[2]) * 60;
     }
     return null;
   }
