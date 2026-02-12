@@ -1,0 +1,281 @@
+Transcript insights MUST:
+
+Reference exact teaching moments using timestamps
+
+Connect teacher explanation to student performance
+
+Identify concept-level strengths and weaknesses
+
+Detect teacher instructional behavior patterns
+
+Detect student confusion signals
+
+Provide transcript evidence excerpts
+
+Provide causal narrative explanation
+
+Reject generic or vague statements
+
+4.X.1 Concept Understanding Mapping
+
+For each transcript segment:
+
+Step 1 — Topic Tagging
+
+Tag transcript segments using:
+
+Arabic keyword detection
+
+Consecutive segment clustering
+
+Activity proximity weighting (±3 minutes from activities)
+
+Step 2 — Performance Linkage
+
+Link each concept to:
+
+Poll question results containing same keywords
+
+Nearby activities
+
+Student confusion chat signals
+
+Step 3 — Concept Mastery Insight Output
+
+Return structured insight:
+
+Concept: {Concept Name}
+
+Teacher Explanation Coverage:
+
+Total explanation duration
+
+Timestamp ranges
+
+Student Outcome:
+
+Average correctness percentage
+
+Completion rate
+
+Confusion signal count
+
+Insight:
+Narrative explaining relationship between teaching approach and student performance.
+
+Evidence:
+
+Transcript excerpt (Arabic)
+
+Question or activity result linkage
+
+Chat indicator summary
+
+4.X.2 Teaching Clarity Evaluation
+
+For every teacher explanation block longer than 30 seconds:
+
+Evaluate clarity using transcript linguistic patterns.
+
+Detect:
+
+Step-by-step explanation structure
+
+Repetition or rephrasing
+
+Example or analogy usage
+
+Student verification prompts
+
+Transition markers
+
+Output:
+
+Explanation Clarity Assessment:
+
+Segment:
+{Timestamp}
+
+Concept:
+{Detected Topic}
+
+Teaching Behavior:
+
+Structured explanation detected / missing
+
+Example usage detected / missing
+
+Student comprehension checks detected / missing
+
+Impact Prediction:
+Narrative explaining potential student understanding impact.
+
+Evidence:
+"{Arabic transcript excerpt}"
+
+4.X.3 Teacher Questioning Quality Analysis
+
+Detect teacher questioning types:
+
+Open-ended conceptual questions
+
+Closed verification questions
+
+Engagement prompts
+
+Rhetorical explanation questions
+
+Output:
+
+Teacher Question Pattern:
+Type: {Open / Closed / Prompt / Rhetorical}
+
+Frequency:
+{Count}
+
+Effectiveness:
+Link questioning to:
+
+Chat engagement bursts
+
+Poll correctness changes
+
+Participation spikes
+
+Insight:
+Narrative explaining questioning impact on engagement and comprehension.
+
+4.X.4 Student Confusion Moment Detection (Enhanced)
+
+Detect confusion clusters when:
+
+≥2 confusion chat signals occur within 45 seconds.
+
+Generate:
+
+Student Confusion Moment Detected
+
+Time:
+{Timestamp}
+
+Concept Under Discussion:
+{Topic}
+
+Teacher Response Behavior:
+Immediate clarification detected / Missing clarification
+
+Learning Risk Assessment:
+Narrative describing comprehension risk.
+
+Evidence:
+Chat message summary + transcript excerpt
+
+4.X.5 Explanation Effectiveness Score
+
+For each concept or activity calculate:
+
+Explanation Effectiveness Score =
+Weighted combination of:
+
+Concept correctness
+
+Confusion frequency
+
+Completion rate
+
+Explanation duration adequacy
+
+Verification questioning presence
+
+Return rating:
+
+Excellent
+
+Effective
+
+Needs Reinforcement
+
+Ineffective
+
+Include narrative justification.
+
+4.X.6 Teaching Pattern Recognition
+
+Detect recurring teacher instructional patterns such as:
+
+Over-explaining high-correctness concepts
+
+Moving too quickly through low-correctness concepts
+
+Speaking during student solving time
+
+Ignoring confusion chat signals
+
+Strong engagement prompting behavior
+
+Output:
+
+Detected Teaching Pattern:
+{Pattern Name}
+
+Occurrences:
+{Count}
+
+Impact:
+Pedagogical consequence narrative.
+
+Recommendation:
+Specific actionable improvement.
+
+4.X.7 Micro-Moment Highlight Extraction
+
+Identify:
+
+Up to 3 strongest teaching moments
+
+Up to 3 highest-risk learning moments
+
+Each must include:
+
+Moment Type:
+{Strong / Risk}
+
+Time:
+{Timestamp}
+
+What Happened:
+Narrative description
+
+Why It Matters:
+Learning impact explanation
+
+Evidence:
+Transcript excerpt + performance linkage
+
+4.X.8 Transcript Evidence Requirements (CRITICAL)
+
+Every transcript insight MUST include:
+
+Timestamp
+
+Arabic transcript excerpt
+
+Linked student outcome
+
+Cause-effect explanation
+
+If any element is missing, discard the insight.
+
+4.X.9 Insight Specificity Validation
+
+Before returning dashboard results:
+
+Reject insights that:
+
+Do not include measurable outcomes
+
+Do not include transcript evidence
+
+Contain generic pedagogy language
+
+Lack timestamp reference

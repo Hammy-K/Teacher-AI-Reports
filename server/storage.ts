@@ -297,6 +297,493 @@ export class DatabaseStorage implements IStorage {
     return { texts, totalSec, topics };
   }
 
+  private buildConceptMasteryMap(
+    sorted: { startSec: number; endSec: number; text: string }[],
+    activityTimeline: any[],
+    chats: any[]
+  ): any[] {
+    const topicMap: [RegExp, string][] = [
+      [/الدائر[ةه]/i, "Circles"],
+      [/المستقيم|مستقيمات/i, "Lines in circles"],
+      [/نصف القطر|أنصاف.*القطر/i, "Radius"],
+      [/القطر/i, "Diameter"],
+      [/الوتر|وتر/i, "Chord"],
+      [/مماس|التماس/i, "Tangent"],
+      [/الزاوي[ةه]\s*المركزي[ةه]/i, "Central angles"],
+      [/الزاوي[ةه]\s*المحيطي[ةه]/i, "Inscribed angles"],
+      [/الزوايا|زاوي[ةه]/i, "Angles"],
+      [/المحيط/i, "Perimeter"],
+      [/المساح[ةه]/i, "Area"],
+      [/المضلع|مضلعات|رباعي/i, "Polygons"],
+      [/القوس/i, "Arc"],
+      [/طاء.*نق|نق\s*تربيع/i, "Circle formulas"],
+      [/مربع|مثلث|سداسي/i, "Shapes in circles"],
+    ];
+
+    const formatTime = (sec: number) => {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    };
+
+    const concepts: any[] = [];
+
+    for (const [pattern, conceptName] of topicMap) {
+      const matchingSegments = sorted.filter(t => pattern.test(t.text));
+      if (matchingSegments.length === 0) continue;
+
+      let totalExplanationSec = 0;
+      const timeRanges: string[] = [];
+      const excerpts: string[] = [];
+
+      let rangeStart = matchingSegments[0].startSec;
+      let rangeEnd = matchingSegments[0].endSec;
+      for (let i = 0; i < matchingSegments.length; i++) {
+        const seg = matchingSegments[i];
+        totalExplanationSec += (seg.endSec - seg.startSec);
+        if (excerpts.length < 2) {
+          excerpts.push(seg.text.substring(0, 120));
+        }
+        if (i > 0 && seg.startSec - rangeEnd > 60) {
+          timeRanges.push(`${formatTime(rangeStart)}–${formatTime(rangeEnd)}`);
+          rangeStart = seg.startSec;
+        }
+        rangeEnd = seg.endSec;
+      }
+      timeRanges.push(`${formatTime(rangeStart)}–${formatTime(rangeEnd)}`);
+
+      const relatedActivities = activityTimeline.filter(atl => {
+        const preTopics = atl.preTeaching?.topics || '';
+        return preTopics.includes(conceptName);
+      });
+
+      const avgCorrectness = relatedActivities.length > 0
+        ? Math.round(relatedActivities.reduce((s: number, a: any) => s + a.correctPercent, 0) / relatedActivities.length)
+        : null;
+
+      const completionRates = relatedActivities.map((a: any) => a.correctPercent);
+
+      const confusionCount = chats.filter(c => {
+        if (c.userType !== 'STUDENT') return false;
+        const ts = this.parseTimeToSeconds(c.createdAtTs || '');
+        if (ts === null) return false;
+        const confusionPatterns = /ما\s*فهم|مو\s*فاهم|مو\s*واضح|ما\s*عرف|صعب|ما\s*فهمت|مش\s*فاهم|كيف|وش\s*يعني|يعني\s*ايش|ما\s*وضح|\?\?|اعيد/i;
+        const duringExplanation = matchingSegments.some(seg => ts >= seg.startSec - 30 && ts <= seg.endSec + 60);
+        return duringExplanation && confusionPatterns.test(c.messageText || '');
+      }).length;
+
+      let effectiveness: string;
+      if (avgCorrectness === null) {
+        effectiveness = "Not assessed";
+      } else if (avgCorrectness >= 75) {
+        effectiveness = "Excellent";
+      } else if (avgCorrectness >= 60) {
+        effectiveness = "Effective";
+      } else if (avgCorrectness >= 40) {
+        effectiveness = "Needs Reinforcement";
+      } else {
+        effectiveness = "Ineffective";
+      }
+
+      let insight = '';
+      if (avgCorrectness !== null) {
+        if (avgCorrectness >= 75) {
+          insight = `The teacher explained "${conceptName}" for ${Math.round(totalExplanationSec / 60 * 10) / 10} min across ${timeRanges.length} segment(s). Students scored ${avgCorrectness}% on related activities — the explanation was clear and well-structured.`;
+        } else if (avgCorrectness >= 50) {
+          insight = `The teacher spent ${Math.round(totalExplanationSec / 60 * 10) / 10} min on "${conceptName}". Students scored ${avgCorrectness}% — the explanation covered the topic but did not achieve full comprehension. ${confusionCount > 0 ? `${confusionCount} confusion signal(s) appeared in chat during this explanation.` : ''}`;
+        } else {
+          insight = `The teacher spent ${Math.round(totalExplanationSec / 60 * 10) / 10} min on "${conceptName}" but students scored only ${avgCorrectness}%. The explanation failed to build understanding. ${confusionCount > 0 ? `${confusionCount} confusion signal(s) confirmed students were lost.` : 'No confusion signals appeared — students did not express confusion but still performed poorly, suggesting a gap between perceived and actual understanding.'}`;
+        }
+      } else {
+        insight = `The teacher explained "${conceptName}" for ${Math.round(totalExplanationSec / 60 * 10) / 10} min (${timeRanges.join(', ')}) but no related activity directly tested this concept.`;
+      }
+
+      concepts.push({
+        concept: conceptName,
+        explanationDurationMin: Math.round(totalExplanationSec / 60 * 10) / 10,
+        timeRanges,
+        avgCorrectness,
+        confusionSignals: confusionCount,
+        effectiveness,
+        insight,
+        evidence: excerpts,
+        relatedActivities: relatedActivities.map((a: any) => `${a.label} (${a.startTime}): ${a.correctPercent}%`),
+      });
+    }
+
+    concepts.sort((a, b) => {
+      if (a.avgCorrectness === null && b.avgCorrectness === null) return 0;
+      if (a.avgCorrectness === null) return 1;
+      if (b.avgCorrectness === null) return -1;
+      return a.avgCorrectness - b.avgCorrectness;
+    });
+
+    return concepts;
+  }
+
+  private buildTeachingClarityEvaluation(
+    sorted: { startSec: number; endSec: number; text: string }[]
+  ): any[] {
+    const formatTime = (sec: number) => {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    };
+
+    const continuousBlocks: { startSec: number; endSec: number; texts: string[] }[] = [];
+    if (sorted.length === 0) return [];
+
+    let blockStart = sorted[0].startSec;
+    let blockEnd = sorted[0].endSec;
+    let blockTexts = [sorted[0].text];
+
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i].startSec - blockEnd <= 5) {
+        blockEnd = Math.max(blockEnd, sorted[i].endSec);
+        blockTexts.push(sorted[i].text);
+      } else {
+        if (blockEnd - blockStart >= 30) {
+          continuousBlocks.push({ startSec: blockStart, endSec: blockEnd, texts: blockTexts });
+        }
+        blockStart = sorted[i].startSec;
+        blockEnd = sorted[i].endSec;
+        blockTexts = [sorted[i].text];
+      }
+    }
+    if (blockEnd - blockStart >= 30) {
+      continuousBlocks.push({ startSec: blockStart, endSec: blockEnd, texts: blockTexts });
+    }
+
+    const stepByStepPattern = /أولا|ثانيا|ثالثا|الخطوة|أول شي|بعدين|ثم|بعد كذا|نبدأ.*ب|أول حاجة|1\.|2\.|3\./i;
+    const repetitionPattern = /يعني|بمعنى|نقدر نقول|بالعربي|بشكل ثاني|مرة ثانية|نعيد/i;
+    const examplePattern = /مثلا|مثال|على سبيل|لو عندنا|تخيل|فرض|يعني مثل|لو كان/i;
+    const verificationPattern = /واضح|صح|فاهمين|تمام|سؤال|فهمتوا|ماشي|صح ولا لا|عرفتوا/i;
+    const transitionPattern = /طيب|الحين|ننتقل|نروح|نكمل|خلاص|يلا|هسا/i;
+
+    return continuousBlocks.map(block => {
+      const combined = block.texts.join(' ');
+      const durationSec = block.endSec - block.startSec;
+      const topics = this.extractTopics(block.texts);
+
+      const hasStepByStep = stepByStepPattern.test(combined);
+      const hasRepetition = repetitionPattern.test(combined);
+      const hasExample = examplePattern.test(combined);
+      const hasVerification = verificationPattern.test(combined);
+      const hasTransition = transitionPattern.test(combined);
+
+      const clarityScore = [hasStepByStep, hasRepetition, hasExample, hasVerification, hasTransition]
+        .filter(Boolean).length;
+
+      const behaviors: string[] = [];
+      if (hasStepByStep) behaviors.push("Step-by-step structure detected");
+      if (hasRepetition) behaviors.push("Rephrasing/repetition detected");
+      if (hasExample) behaviors.push("Example or analogy used");
+      if (hasVerification) behaviors.push("Student comprehension check detected");
+      if (hasTransition) behaviors.push("Transition markers used");
+
+      if (!hasStepByStep) behaviors.push("No step-by-step structure — explanation was unstructured");
+      if (!hasExample) behaviors.push("No examples or analogies — abstract explanation only");
+      if (!hasVerification) behaviors.push("No comprehension check — teacher did not verify student understanding");
+
+      let impact: string;
+      if (clarityScore >= 4) {
+        impact = `This ${Math.round(durationSec / 60 * 10) / 10} min explanation on "${topics}" used ${clarityScore}/5 clarity techniques — a well-structured delivery that supports strong retention.`;
+      } else if (clarityScore >= 2) {
+        impact = `This explanation on "${topics}" used ${clarityScore}/5 clarity techniques. Adding ${5 - clarityScore} more (${!hasExample ? 'examples' : ''}${!hasVerification ? ', comprehension checks' : ''}${!hasStepByStep ? ', step-by-step structure' : ''}) would strengthen student understanding.`;
+      } else {
+        impact = `This explanation on "${topics}" used only ${clarityScore}/5 clarity techniques. The teacher delivered content without structure, examples, or verification — this is a direct risk to student comprehension.`;
+      }
+
+      return {
+        timestamp: `${formatTime(block.startSec)}–${formatTime(block.endSec)}`,
+        durationMin: Math.round(durationSec / 60 * 10) / 10,
+        concept: topics,
+        behaviors,
+        clarityScore,
+        impact,
+        evidence: combined.substring(0, 200),
+      };
+    });
+  }
+
+  private buildQuestioningAnalysis(
+    sorted: { startSec: number; endSec: number; text: string }[],
+    chats: any[],
+    activityTimeline: any[]
+  ): any {
+    const openEndedPattern = /ليش|لماذا|كيف ممكن|ايش رأيكم|شو تتوقعوا|ايش الفرق|وش السبب|ليه/i;
+    const closedPattern = /صح ولا غلط|صح ولا لا|ايش الجواب|كم يساوي|ايش يكون|كم عدد/i;
+    const promptPattern = /اكتبوا|في الشات|ردوا|جاوبوا|ارفعوا|حطوا|اختاروا|شاركوا/i;
+    const rhetoricalPattern = /صح ؟|مو كذا ؟|واضح ؟|تمام ؟|ماشي ؟|ولا لا ؟/i;
+
+    let openEnded = 0, closed = 0, prompts = 0, rhetorical = 0;
+    const timestamps: any[] = [];
+
+    for (const seg of sorted) {
+      const text = seg.text;
+      if (openEndedPattern.test(text)) {
+        openEnded++;
+        if (timestamps.length < 5) timestamps.push({ type: 'Open-ended', text: text.substring(0, 80) });
+      }
+      if (closedPattern.test(text)) {
+        closed++;
+        if (timestamps.length < 5) timestamps.push({ type: 'Closed', text: text.substring(0, 80) });
+      }
+      if (promptPattern.test(text)) {
+        prompts++;
+        if (timestamps.length < 5) timestamps.push({ type: 'Engagement prompt', text: text.substring(0, 80) });
+      }
+      if (rhetoricalPattern.test(text)) {
+        rhetorical++;
+      }
+    }
+
+    const total = openEnded + closed + prompts;
+    let insight: string;
+    if (total === 0) {
+      insight = `The teacher asked 0 questions during the entire session. No open-ended, closed, or engagement prompts were detected in the transcript. This is a significant gap — questioning drives student engagement and checks understanding.`;
+    } else if (openEnded >= 3 && prompts >= 2) {
+      insight = `The teacher asked ${total} questions (${openEnded} open-ended, ${closed} closed, ${prompts} engagement prompts). Open-ended questions encourage deeper thinking and were used effectively.`;
+    } else if (prompts >= 3) {
+      insight = `The teacher used ${prompts} engagement prompts (e.g., "write in chat", "answer"). This drove participation but lacked open-ended conceptual questions that test deeper understanding.`;
+    } else {
+      insight = `The teacher asked only ${total} question(s) total. With ${openEnded} open-ended and ${prompts} engagement prompts, the session lacked interactive questioning. Students had limited opportunities to demonstrate understanding.`;
+    }
+
+    return {
+      openEnded,
+      closed,
+      prompts,
+      rhetorical,
+      total,
+      insight,
+      examples: timestamps,
+    };
+  }
+
+  private buildConfusionMoments(
+    sorted: { startSec: number; endSec: number; text: string }[],
+    chats: any[]
+  ): any[] {
+    const formatTime = (sec: number) => {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    };
+
+    const confusionPatterns = /ما\s*فهم|مو\s*فاهم|مو\s*واضح|ما\s*عرف|صعب|ما\s*فهمت|مش\s*فاهم|كيف|وش\s*يعني|يعني\s*ايش|ما\s*وضح|\?\?|اعيد/i;
+
+    const studentChats = chats
+      .filter((c: any) => c.userType === 'STUDENT')
+      .map((c: any) => ({
+        ts: this.parseTimeToSeconds(c.createdAtTs || ''),
+        text: c.messageText || '',
+        name: c.creatorName || 'student',
+      }))
+      .filter(c => c.ts !== null && confusionPatterns.test(c.text))
+      .sort((a, b) => a.ts! - b.ts!);
+
+    if (studentChats.length === 0) return [];
+
+    const clusters: { startSec: number; endSec: number; messages: typeof studentChats }[] = [];
+    let clusterStart = studentChats[0].ts!;
+    let clusterEnd = studentChats[0].ts!;
+    let clusterMsgs = [studentChats[0]];
+
+    for (let i = 1; i < studentChats.length; i++) {
+      if (studentChats[i].ts! - clusterEnd <= 45) {
+        clusterEnd = studentChats[i].ts!;
+        clusterMsgs.push(studentChats[i]);
+      } else {
+        if (clusterMsgs.length >= 2) {
+          clusters.push({ startSec: clusterStart, endSec: clusterEnd, messages: clusterMsgs });
+        }
+        clusterStart = studentChats[i].ts!;
+        clusterEnd = studentChats[i].ts!;
+        clusterMsgs = [studentChats[i]];
+      }
+    }
+    if (clusterMsgs.length >= 2) {
+      clusters.push({ startSec: clusterStart, endSec: clusterEnd, messages: clusterMsgs });
+    }
+
+    const clarificationPattern = /يعني|بمعنى|اقصد|خلني|بشكل ثاني|وضحت|فهمتوا الحين/i;
+
+    return clusters.map(cluster => {
+      const topic = this.extractTopics(
+        sorted.filter(t => t.startSec >= cluster.startSec - 60 && t.endSec <= cluster.endSec + 30).map(t => t.text)
+      );
+
+      const teacherResponseAfter = sorted.filter(t =>
+        t.startSec >= cluster.endSec && t.startSec <= cluster.endSec + 60
+      );
+      const hasClarification = teacherResponseAfter.some(t => clarificationPattern.test(t.text));
+
+      const teacherResponse = hasClarification
+        ? "Teacher provided immediate clarification after confusion signals"
+        : teacherResponseAfter.length > 0
+          ? "Teacher continued talking but did not address the confusion directly"
+          : "No teacher response detected — confusion was ignored";
+
+      return {
+        timestamp: formatTime(cluster.startSec),
+        concept: topic,
+        signalCount: cluster.messages.length,
+        messages: cluster.messages.slice(0, 3).map(m => `"${m.text.substring(0, 60)}" — ${m.name}`),
+        teacherResponse,
+        riskLevel: cluster.messages.length >= 3 ? "High" : "Medium",
+        riskAssessment: cluster.messages.length >= 3
+          ? `${cluster.messages.length} students expressed confusion about "${topic}" within ${Math.round((cluster.endSec - cluster.startSec))} seconds. This is a critical comprehension breakdown — the concept was not understood.`
+          : `${cluster.messages.length} confusion signals about "${topic}" indicate partial understanding gaps.`,
+      };
+    });
+  }
+
+  private buildTeachingPatterns(
+    sorted: { startSec: number; endSec: number; text: string }[],
+    activityTimeline: any[],
+    chats: any[],
+    confusionMoments: any[]
+  ): any[] {
+    const formatTime = (sec: number) => {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    };
+
+    const patterns: any[] = [];
+
+    const overExplained = activityTimeline.filter(a => a.preTeaching.durationMin > 3 && a.correctPercent >= 75);
+    if (overExplained.length >= 1) {
+      patterns.push({
+        pattern: "Over-explaining high-correctness concepts",
+        occurrences: overExplained.length,
+        details: overExplained.map((a: any) => `${a.label} (${a.startTime}): ${a.preTeaching.durationMin} min explanation, students scored ${a.correctPercent}%`),
+        impact: `The teacher spent excessive time (${overExplained.map((a: any) => a.preTeaching.durationMin + ' min').join(', ')}) explaining concepts students already understood. This consumed ${Math.round(overExplained.reduce((s: number, a: any) => s + a.preTeaching.durationMin, 0))} min total — time that is better allocated to practice or weaker topics.`,
+        recommendation: "Reduce explanation time for concepts where students demonstrate strong understanding. Reallocate this time to low-scoring topics.",
+      });
+    }
+
+    const underExplained = activityTimeline.filter(a => a.preTeaching.durationMin < 1 && a.correctPercent < 50);
+    if (underExplained.length >= 1) {
+      patterns.push({
+        pattern: "Rushing through low-correctness concepts",
+        occurrences: underExplained.length,
+        details: underExplained.map((a: any) => `${a.label} (${a.startTime}): only ${a.preTeaching.durationMin} min explanation, students scored ${a.correctPercent}%`),
+        impact: `Students scored poorly (${underExplained.map((a: any) => a.correctPercent + '%').join(', ')}) on concepts that received minimal explanation. The teacher moved to activities before building sufficient understanding.`,
+        recommendation: "Spend at least 2-3 minutes explaining concepts before testing. Use examples and check understanding before starting an activity.",
+      });
+    }
+
+    const talkDuringActivities = activityTimeline.filter(a => a.duringTeaching.teacherTalking && a.duringTeaching.durationMin > 0.3);
+    if (talkDuringActivities.length >= 2) {
+      patterns.push({
+        pattern: "Speaking during student solving time",
+        occurrences: talkDuringActivities.length,
+        details: talkDuringActivities.map((a: any) => `${a.label} (${a.startTime}): teacher talked ${a.duringTeaching.durationMin} min about "${a.duringTeaching.topics}"`),
+        impact: `The teacher interrupted student independent work in ${talkDuringActivities.length} activities. This disrupts concentration and reduces the reliability of assessment results.`,
+        recommendation: "Stay silent during activities. If students need help, use chat or wait until the activity ends to explain.",
+      });
+    }
+
+    const ignoredConfusion = confusionMoments.filter(cm => cm.teacherResponse.includes("ignored") || cm.teacherResponse.includes("did not address"));
+    if (ignoredConfusion.length >= 1) {
+      patterns.push({
+        pattern: "Ignoring student confusion signals",
+        occurrences: ignoredConfusion.length,
+        details: ignoredConfusion.map((cm: any) => `${cm.timestamp}: ${cm.signalCount} confusion signals about "${cm.concept}" — ${cm.teacherResponse}`),
+        impact: `${ignoredConfusion.length} confusion moment(s) went unaddressed. Students who expressed confusion did not receive clarification, leading to persistent misunderstanding.`,
+        recommendation: "Monitor the chat during and after explanations. When students express confusion, pause and re-explain the concept with a different approach.",
+      });
+    }
+
+    const studentChats = chats.filter((c: any) => c.userType === 'STUDENT');
+    const promptPattern = /اكتبوا|في الشات|ردوا|جاوبوا|ارفعوا|حطوا|اختاروا|شاركوا/i;
+    const engagementPrompts = sorted.filter(t => promptPattern.test(t.text));
+    if (engagementPrompts.length >= 3 && studentChats.length >= 10) {
+      patterns.push({
+        pattern: "Strong engagement prompting behavior",
+        occurrences: engagementPrompts.length,
+        details: engagementPrompts.slice(0, 3).map(t => `${formatTime(t.startSec)}: "${t.text.substring(0, 80)}"`),
+        impact: `The teacher actively prompted students to participate ${engagementPrompts.length} times, resulting in ${studentChats.length} student chat messages. This kept students engaged throughout the session.`,
+        recommendation: "Continue this practice — prompting drives engagement and gives the teacher visibility into student understanding.",
+      });
+    }
+
+    return patterns;
+  }
+
+  private buildMicroMoments(
+    activityTimeline: any[],
+    confusionMoments: any[],
+    teachingClarity: any[],
+    sorted: { startSec: number; endSec: number; text: string }[]
+  ): { strong: any[]; risk: any[] } {
+    const strong: any[] = [];
+    const risk: any[] = [];
+
+    const highCorrActivities = activityTimeline
+      .filter((a: any) => a.correctPercent >= 75)
+      .sort((a: any, b: any) => b.correctPercent - a.correctPercent);
+
+    for (const act of highCorrActivities.slice(0, 3)) {
+      strong.push({
+        type: "Strong",
+        timestamp: act.startTime,
+        what: `${act.label} achieved ${act.correctPercent}% correctness after ${act.preTeaching.durationMin} min of teaching on "${act.preTeaching.topics}".`,
+        why: `Students demonstrated strong understanding of "${act.preTeaching.topics}". The explanation duration (${act.preTeaching.durationMin} min) was well-calibrated for this concept.`,
+        evidence: `Pre-teaching: ${act.preTeaching.durationMin} min → Activity result: ${act.correctPercent}% correct`,
+      });
+    }
+
+    const clearExplanations = teachingClarity.filter(tc => tc.clarityScore >= 4);
+    for (const tc of clearExplanations.slice(0, 1)) {
+      if (strong.length < 3) {
+        strong.push({
+          type: "Strong",
+          timestamp: tc.timestamp,
+          what: `Explanation at ${tc.timestamp} on "${tc.concept}" scored ${tc.clarityScore}/5 on clarity (used ${tc.behaviors.filter((b: string) => !b.includes('No ')).join(', ')}).`,
+          why: `A high-clarity explanation improves retention. The teacher structured this explanation well, increasing the likelihood that students understood the material.`,
+          evidence: `"${tc.evidence.substring(0, 100)}..."`,
+        });
+      }
+    }
+
+    const lowCorrActivities = activityTimeline
+      .filter((a: any) => a.correctPercent > 0 && a.correctPercent < 40)
+      .sort((a: any, b: any) => a.correctPercent - b.correctPercent);
+
+    for (const act of lowCorrActivities.slice(0, 3)) {
+      risk.push({
+        type: "Risk",
+        timestamp: act.startTime,
+        what: `${act.label} scored only ${act.correctPercent}% after ${act.preTeaching.durationMin > 0 ? act.preTeaching.durationMin + ' min teaching on "' + act.preTeaching.topics + '"' : 'no pre-teaching'}.`,
+        why: act.preTeaching.durationMin > 2
+          ? `Despite ${act.preTeaching.durationMin} min of explanation, students did not understand "${act.preTeaching.topics}". The teaching approach was ineffective for this concept.`
+          : `Insufficient explanation time (${act.preTeaching.durationMin} min) before a complex activity led to poor student performance.`,
+        evidence: `Pre-teaching: ${act.preTeaching.durationMin} min → Activity result: ${act.correctPercent}% correct`,
+      });
+    }
+
+    for (const cm of confusionMoments.slice(0, 2)) {
+      if (risk.length < 3) {
+        risk.push({
+          type: "Risk",
+          timestamp: cm.timestamp,
+          what: `${cm.signalCount} students expressed confusion about "${cm.concept}" at ${cm.timestamp}.`,
+          why: `${cm.riskAssessment} ${cm.teacherResponse}.`,
+          evidence: cm.messages.join(' | '),
+        });
+      }
+    }
+
+    return { strong: strong.slice(0, 3), risk: risk.slice(0, 3) };
+  }
+
   private buildActivityTimeline(
     activities: any[],
     sorted: { startSec: number; endSec: number; text: string }[],
@@ -382,7 +869,7 @@ export class DatabaseStorage implements IStorage {
       if (correctPercent >= 80) {
         insights.push(`Students scored ${correctPercent}% — the explanation on "${preActivity.topics}" was effective.`);
       } else if (correctPercent >= 50) {
-        insights.push(`Students scored ${correctPercent}% — the explanation on "${preActivity.topics}" was partially effective. Some students may need reinforcement.`);
+        insights.push(`Students scored ${correctPercent}% — the explanation on "${preActivity.topics}" was partially effective. ${100 - correctPercent}% of students did not answer correctly and need reinforcement.`);
       } else if (correctPercent > 0) {
         insights.push(`Students scored only ${correctPercent}% — the explanation on "${preActivity.topics}" was not effective. The concept needs re-teaching with a different approach.`);
       }
@@ -400,7 +887,7 @@ export class DatabaseStorage implements IStorage {
       if (postActivity.totalSec > 0 && correctPercent < 50) {
         insights.push(`After the activity, the teacher spent ${entry.postTeaching.durationMin} min re-explaining: ${postActivity.topics}. Given the low score, this was appropriate.`);
       } else if (postActivity.totalSec > 60 && correctPercent > 75) {
-        insights.push(`After the activity (${correctPercent}% correct), the teacher spent ${entry.postTeaching.durationMin} min explaining. Since most students understood, this time could be reduced.`);
+        insights.push(`After the activity (${correctPercent}% correct), the teacher spent ${entry.postTeaching.durationMin} min explaining. Since most students understood, this time is excessive — move on to the next concept.`);
       }
 
       entry.insights = insights;
@@ -486,6 +973,13 @@ export class DatabaseStorage implements IStorage {
 
     const activityTimeline = this.buildActivityTimeline(activities, sorted, chats);
 
+    const conceptMasteryMap = this.buildConceptMasteryMap(sorted, activityTimeline, chats);
+    const teachingClarity = this.buildTeachingClarityEvaluation(sorted);
+    const questioningAnalysis = this.buildQuestioningAnalysis(sorted, chats, activityTimeline);
+    const confusionMoments = this.buildConfusionMoments(sorted, chats);
+    const teachingPatterns = this.buildTeachingPatterns(sorted, activityTimeline, chats, confusionMoments);
+    const microMoments = this.buildMicroMoments(activityTimeline, confusionMoments, teachingClarity, sorted);
+
     const formatTime = (sec: number) => {
       const h = Math.floor(sec / 3600);
       const m = Math.floor((sec % 3600) / 60);
@@ -566,7 +1060,7 @@ export class DatabaseStorage implements IStorage {
 
     if (positivePercent >= 80) { engScore += 0.5; evidence2.push(`Positive sentiment ${positivePercent}% (${positiveUsers}/${totalSentiment})`); }
     else if (positivePercent >= 60) { evidence2.push(`Positive sentiment ${positivePercent}%`); }
-    else { engScore -= 0.5; evidence2.push(`Only ${positivePercent}% positive sentiment — students may not be enjoying the session`); }
+    else { engScore -= 0.5; evidence2.push(`Only ${positivePercent}% positive sentiment — students are not engaged or enjoying the session`); }
 
     const confusedActivities = activityTimeline.filter(a => a.confusionDetected);
     if (confusedActivities.length > 0) {
@@ -638,13 +1132,13 @@ export class DatabaseStorage implements IStorage {
     }
 
     if (positivePercent >= 75) { commScore += 0.5; evidence3.push(`Positive sentiment ${positivePercent}% indicates good relationship with students`); }
-    else if (positivePercent < 60) { commScore -= 0.5; evidence3.push(`Low positive sentiment (${positivePercent}%) may indicate communication issues`); }
+    else if (positivePercent < 60) { commScore -= 0.5; evidence3.push(`Low positive sentiment (${positivePercent}%) — the communication style is not connecting with students`); }
 
     const toneVariation = continuousSegments.length > 0 ? continuousSegments.length : 0;
     if (toneVariation >= 8) {
       comments3.push(`The teacher had ${toneVariation} distinct talk segments, showing good variation in delivery pace.`);
     } else if (toneVariation <= 3 && sorted.length > 10) {
-      comments3.push(`Only ${toneVariation} distinct talk segments detected — the teacher may be delivering in long monotonous blocks without enough breaks.`);
+      comments3.push(`Only ${toneVariation} distinct talk segments detected — the teacher is delivering in long monotonous blocks without enough breaks.`);
     }
 
     commScore = Math.max(1, Math.min(5, Math.round(commScore * 2) / 2));
@@ -708,7 +1202,7 @@ export class DatabaseStorage implements IStorage {
     if (sessionCompletedPercent >= 80) {
       evidence4.push(`Session completion rate ${sessionCompletedPercent}% — students kept up with the pace`);
     } else if (sessionCompletedPercent < 60) {
-      timeScore -= 0.5; evidence4.push(`Only ${sessionCompletedPercent}% session completion — pacing may be too fast`);
+      timeScore -= 0.5; evidence4.push(`Only ${sessionCompletedPercent}% session completion — the pacing is too fast for students to keep up`);
     }
 
     for (const atl of activityTimeline) {
@@ -716,10 +1210,10 @@ export class DatabaseStorage implements IStorage {
         comments4.push(`${atl.preTeaching.durationMin} min of explanation before ${atl.label} (${atl.startTime}), but students scored ${atl.correctPercent}% — explanation was longer than needed. Consider reducing to allow more activity time.`);
       }
       if (atl.postTeaching.durationMin > 2 && atl.correctPercent >= 75) {
-        comments4.push(`${atl.postTeaching.durationMin} min of explanation after ${atl.label} (${atl.correctPercent}% correct) — since students scored well, this post-activity time could be shortened. Move on quickly when comprehension is high.`);
+        comments4.push(`${atl.postTeaching.durationMin} min of explanation after ${atl.label} (${atl.correctPercent}% correct) — since students scored well, this post-activity time is excessive. Move on quickly when comprehension is high.`);
       }
       if (atl.preTeaching.durationMin < 0.5 && atl.correctPercent < 50) {
-        comments4.push(`Only ${atl.preTeaching.durationMin} min of explanation before ${atl.label} (${atl.startTime}), which scored ${atl.correctPercent}%. Insufficient preparation time may have contributed to the low score.`);
+        comments4.push(`Only ${atl.preTeaching.durationMin} min of explanation before ${atl.label} (${atl.startTime}), which scored ${atl.correctPercent}%. Insufficient preparation time directly contributed to the low score.`);
       }
     }
 
@@ -768,7 +1262,7 @@ export class DatabaseStorage implements IStorage {
       errorScore -= 1;
       const etTopics = exitTicketInstance.teacherTalkTopics || 'unknown topics';
       evidence5.push(`MAJOR: The teacher was talking during the exit ticket for ${exitTicketInstance.teacherTalkOverlapMin} min — students should answer independently`);
-      comments5.push(`During the exit ticket, the teacher was discussing "${etTopics}" for ${exitTicketInstance.teacherTalkOverlapMin} min. This is a major error because exit tickets must be completed independently to accurately measure student comprehension. The teacher's talking may have given hints or distracted students.`);
+      comments5.push(`During the exit ticket, the teacher was discussing "${etTopics}" for ${exitTicketInstance.teacherTalkOverlapMin} min. This is a major error because exit tickets must be completed independently to accurately measure student comprehension. The teacher's talking gave hints or distracted students, invalidating the results.`);
     } else {
       evidence5.push("The teacher did not talk during the exit ticket — correct protocol followed");
     }
@@ -783,7 +1277,7 @@ export class DatabaseStorage implements IStorage {
     const lowCorrAfterLongExplain = activityTimeline.filter(a => a.preTeaching.durationMin > 2 && a.correctPercent < 40);
     for (const lc of lowCorrAfterLongExplain) {
       errorCount++;
-      comments5.push(`Despite ${lc.preTeaching.durationMin} min of explanation on "${lc.preTeaching.topics}" before ${lc.label}, students scored only ${lc.correctPercent}%. This suggests the explanation may have been unclear or inaccurate. The teacher may need to verify their understanding of this concept.`);
+      comments5.push(`Despite ${lc.preTeaching.durationMin} min of explanation on "${lc.preTeaching.topics}" before ${lc.label}, students scored only ${lc.correctPercent}%. The explanation was unclear or inaccurate. The teacher needs to verify their own understanding of this concept and reteach it.`);
     }
 
     const tmImprovements = feedback.needsImprovement.filter((f: any) => f.category === 'time_management');
@@ -910,6 +1404,14 @@ export class DatabaseStorage implements IStorage {
       criteria,
       overallScore: overallAvg,
       activityTimeline,
+      transcriptAnalysis: {
+        conceptMasteryMap,
+        teachingClarity,
+        questioningAnalysis,
+        confusionMoments,
+        teachingPatterns,
+        microMoments,
+      },
       summary: {
         totalStudents,
         totalQuestions,
@@ -1035,7 +1537,7 @@ export class DatabaseStorage implements IStorage {
     }
 
     if (avgCorrectness < 50) {
-      insights.push(`Overall correctness across all section checks is low at ${avgCorrectness}% — content or teaching approach may need review.`);
+      insights.push(`Overall correctness across all section checks is low at ${avgCorrectness}% — the teaching approach failed to convey the material effectively and needs a complete rework.`);
     }
 
     return {
@@ -1110,18 +1612,18 @@ export class DatabaseStorage implements IStorage {
       if (notAnswered > 0 && q.seen > 0) {
         const skipPercent = Math.round((notAnswered / q.seen) * 100);
         if (skipPercent >= 20) {
-          insights.push(`${notAnswered} students (${skipPercent}%) saw the question but didn't answer — the question may be too difficult or confusing.`);
+          insights.push(`${notAnswered} students (${skipPercent}%) saw the question but didn't answer — the question is too difficult or confusing for this group.`);
         }
       }
 
       if (percent >= 80) {
         insights.push(`Strong result — most students understood this concept well.`);
       } else if (percent >= 60) {
-        insights.push(`Acceptable, but some students struggled — may need a quick review next session.`);
+        insights.push(`Acceptable, but some students struggled — schedule a quick review next session.`);
       } else if (percent >= 40) {
         insights.push(`Low correctness — this topic needs additional explanation or re-teaching next session.`);
       } else if (q.answered > 0) {
-        insights.push(`Very low correctness — the concept was not understood by the majority. The explanation may have been confusing or too brief before the activity.`);
+        insights.push(`Very low correctness — the concept was not understood by the majority. The explanation was confusing or too brief before the activity.`);
       }
 
       return {
@@ -1177,21 +1679,21 @@ export class DatabaseStorage implements IStorage {
 
     const overallPercent = act.correctness?.percent ?? 0;
     if (overallPercent < 50 && overallPercent > 0) {
-      overallInsights.push(`Overall correctness is low at ${overallPercent}% — content may need review or different explanation.`);
+      overallInsights.push(`Overall correctness is low at ${overallPercent}% — the content delivery failed and requires a different explanation approach.`);
     }
 
     const durationMin = act.durationMin || 0;
     const plannedMin = act.plannedDurationMin || 0;
 
     if (plannedMin > 0 && durationMin < plannedMin * 0.7) {
-      overallInsights.push(`Activity was shorter than planned (${durationMin} min vs ${plannedMin} min planned) — insufficient time may explain incomplete answers.`);
+      overallInsights.push(`Activity was shorter than planned (${durationMin} min vs ${plannedMin} min planned) — insufficient time directly caused incomplete answers.`);
     } else if (plannedMin > 0 && durationMin > plannedMin * 1.3) {
-      overallInsights.push(`Activity ran longer than planned (${durationMin} min vs ${plannedMin} min planned) — students may have needed more time.`);
+      overallInsights.push(`Activity ran longer than planned (${durationMin} min vs ${plannedMin} min planned) — students needed more time than allocated.`);
     }
 
     const completionRate = totalStudents > 0 ? Math.round((totalAnswered / totalStudents) * 100) : 0;
     if (completionRate < 80) {
-      overallInsights.push(`Only ${completionRate}% of students completed this activity — some may have run out of time or lost engagement.`);
+      overallInsights.push(`Only ${completionRate}% of students completed this activity — ${100 - completionRate}% ran out of time or lost engagement.`);
     }
 
     if (etStartSec !== null && etEndSec !== null) {
@@ -1211,7 +1713,7 @@ export class DatabaseStorage implements IStorage {
         return !hasTeacherReply;
       });
       if (unansweredChats.length >= 3) {
-        overallInsights.push(`${unansweredChats.length} student messages during this activity went unanswered — students may be seeking clarification.`);
+        overallInsights.push(`${unansweredChats.length} student messages during this activity went unanswered — students were seeking clarification and did not receive it.`);
       }
     }
 
@@ -1367,7 +1869,7 @@ export class DatabaseStorage implements IStorage {
             category: "time_management",
             activityId: act.activityId,
             activity: actLabel,
-            detail: `The teacher spent only ${explanationMin} min explaining after this activity, but ${correctPercent}% correctness suggests 0.5–1 min of explanation would be appropriate.`,
+            detail: `The teacher spent only ${explanationMin} min explaining after this activity, but ${correctPercent}% correctness warrants 0.5–1 min of targeted explanation.`,
             recommended: "0.5–1 min",
             actual: `${explanationMin} min`,
           });
@@ -1543,7 +2045,7 @@ export class DatabaseStorage implements IStorage {
           return `${a.activityType} scored ${pct}% correctness`;
         });
         if (nearbyActivities.some(a => (a.correctness?.percent ?? 100) < 50)) {
-          context += ` This came after an activity with low correctness (${actDetails.join('; ')}) — the teacher was likely re-explaining the concept.`;
+          context += ` This came after an activity with low correctness (${actDetails.join('; ')}) — the teacher was re-explaining the concept.`;
         } else {
           context += ` Near activity: ${actDetails.join('; ')}.`;
         }
@@ -1669,7 +2171,7 @@ export class DatabaseStorage implements IStorage {
       needsImprovement.push({
         category: "pedagogy",
         activity: "Chat engagement",
-        detail: `Only ${engagedBursts} chat engagement bursts detected during teacher talk segments. With ${studentChats.length} total student messages, the teacher could do more to elicit responses — ask students to type their answers in chat after each explanation.`,
+        detail: `Only ${engagedBursts} chat engagement bursts detected during teacher talk segments. With ${studentChats.length} total student messages, the teacher needs to do more to elicit responses — ask students to type their answers in chat after each explanation.`,
         recommended: "3+ engagement prompts per session",
         actual: `${engagedBursts} engagement bursts`,
       });

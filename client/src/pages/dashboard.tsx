@@ -8,7 +8,8 @@ import {
   Users, Clock, ThermometerSun, CheckCircle, BarChart3, Percent,
   ThumbsUp, AlertTriangle, BookOpen, ClipboardCheck, ChevronDown, ChevronLeft, ChevronRight,
   ListChecks, UsersRound, Target, Timer, Lightbulb, MessageSquare, GraduationCap,
-  ShieldCheck, Star, ArrowRight
+  ShieldCheck, Star, ArrowRight, Brain, Eye, HelpCircle, Zap, TrendingUp, TrendingDown,
+  Sparkles, Search, Quote
 } from "lucide-react";
 
 interface ActivityCorrectness {
@@ -152,6 +153,57 @@ interface DashboardData {
       confusionExamples: string[];
       insights: string[];
     }[];
+    transcriptAnalysis?: {
+      conceptMasteryMap: {
+        concept: string;
+        explanationDurationMin: number;
+        timeRanges: string[];
+        avgCorrectness: number | null;
+        confusionSignals: number;
+        effectiveness: string;
+        insight: string;
+        evidence: string[];
+        relatedActivities: string[];
+      }[];
+      teachingClarity: {
+        timestamp: string;
+        durationMin: number;
+        concept: string;
+        behaviors: string[];
+        clarityScore: number;
+        impact: string;
+        evidence: string;
+      }[];
+      questioningAnalysis: {
+        openEnded: number;
+        closed: number;
+        prompts: number;
+        rhetorical: number;
+        total: number;
+        insight: string;
+        examples: { type: string; text: string }[];
+      };
+      confusionMoments: {
+        timestamp: string;
+        concept: string;
+        signalCount: number;
+        messages: string[];
+        teacherResponse: string;
+        riskLevel: string;
+        riskAssessment: string;
+      }[];
+      teachingPatterns: {
+        pattern: string;
+        occurrences: number;
+        details: string[];
+        impact: string;
+        recommendation: string;
+      }[];
+      microMoments: {
+        strong: { type: string; timestamp: string; what: string; why: string; evidence: string }[];
+        risk: { type: string; timestamp: string; what: string; why: string; evidence: string }[];
+      };
+    };
     summary: {
       totalStudents: number;
       totalQuestions: number;
@@ -368,7 +420,302 @@ function QAEvaluationSection({ evaluation }: { evaluation: DashboardData["qaEval
           </CardContent>
         </Card>
       )}
+
+      {evaluation.transcriptAnalysis && (
+        <TranscriptAnalysisSection analysis={evaluation.transcriptAnalysis} />
+      )}
     </div>
+  );
+}
+
+function TranscriptAnalysisSection({ analysis }: { analysis: NonNullable<DashboardData["qaEvaluation"]["transcriptAnalysis"]> }) {
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
+
+  const effectivenessColor = (eff: string) => {
+    if (eff === "High") return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400";
+    if (eff === "Medium") return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400";
+    if (eff === "Low") return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
+    return "bg-muted text-muted-foreground";
+  };
+
+  const clarityColor = (score: number) => {
+    if (score >= 4) return "text-emerald-600 dark:text-emerald-400";
+    if (score >= 2) return "text-amber-600 dark:text-amber-400";
+    return "text-red-600 dark:text-red-400";
+  };
+
+  const riskColor = (level: string) => {
+    if (level === "High") return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
+    return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400";
+  };
+
+  const sections = [
+    { id: "concepts", icon: <Brain className="h-4 w-4" />, title: "Concept Mastery Map", count: analysis.conceptMasteryMap.length },
+    { id: "clarity", icon: <Eye className="h-4 w-4" />, title: "Teaching Clarity Evaluation", count: analysis.teachingClarity.length },
+    { id: "questioning", icon: <HelpCircle className="h-4 w-4" />, title: "Questioning Quality", count: analysis.questioningAnalysis.total },
+    { id: "confusion", icon: <AlertTriangle className="h-4 w-4" />, title: "Confusion Moments", count: analysis.confusionMoments.length },
+    { id: "patterns", icon: <TrendingUp className="h-4 w-4" />, title: "Teaching Patterns", count: analysis.teachingPatterns.length },
+    { id: "micro", icon: <Zap className="h-4 w-4" />, title: "Micro-Moment Highlights", count: analysis.microMoments.strong.length + analysis.microMoments.risk.length },
+  ];
+
+  return (
+    <Card data-testid="card-transcript-analysis">
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <Search className="h-4 w-4" />
+          Deep Transcript Analysis
+        </CardTitle>
+        <Badge variant="secondary" data-testid="badge-analysis-dimensions">6 Dimensions</Badge>
+      </CardHeader>
+      <CardContent className="space-y-1">
+        {sections.map((sec) => (
+          <Collapsible
+            key={sec.id}
+            open={expandedSection === sec.id}
+            onOpenChange={(open) => setExpandedSection(open ? sec.id : null)}
+          >
+            <CollapsibleTrigger
+              className="flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-md hover-elevate"
+              data-testid={`transcript-section-${sec.id}`}
+            >
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                {expandedSection === sec.id ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+                {sec.icon}
+                <span className="text-sm font-medium">{sec.title}</span>
+              </div>
+              <Badge variant="secondary">{sec.count}</Badge>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="ml-9 mr-3 mb-3 mt-1 space-y-3">
+
+                {sec.id === "concepts" && (
+                  <div className="space-y-2" data-testid="analysis-concept-mastery">
+                    {analysis.conceptMasteryMap.map((concept, idx) => (
+                      <div key={idx} className="rounded-md border p-3 space-y-2" data-testid={`concept-${idx}`}>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">{concept.concept}</span>
+                            <Badge variant="secondary">{concept.explanationDurationMin} min</Badge>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {concept.avgCorrectness !== null && (
+                              <span className={`text-sm font-bold tabular-nums ${concept.avgCorrectness >= 75 ? "text-emerald-600 dark:text-emerald-400" : concept.avgCorrectness >= 50 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>
+                                {concept.avgCorrectness}%
+                              </span>
+                            )}
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${effectivenessColor(concept.effectiveness)}`}>
+                              {concept.effectiveness}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-xs">{concept.insight}</p>
+                        {concept.confusionSignals > 0 && (
+                          <div className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+                            <AlertTriangle className="h-3 w-3" />
+                            <span>{concept.confusionSignals} confusion signal(s)</span>
+                          </div>
+                        )}
+                        {concept.relatedActivities.length > 0 && (
+                          <div className="text-xs text-muted-foreground">
+                            <span className="font-medium">Activities:</span> {concept.relatedActivities.join(', ')}
+                          </div>
+                        )}
+                        {concept.evidence.length > 0 && (
+                          <div className="text-xs bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-2 space-y-1">
+                            {concept.evidence.slice(0, 2).map((e, i) => (
+                              <p key={i} className="text-muted-foreground" dir="rtl"><Quote className="h-3 w-3 inline mr-1" />{e}</p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {analysis.conceptMasteryMap.length === 0 && (
+                      <p className="text-xs text-muted-foreground px-3 py-2">No concepts detected in transcript.</p>
+                    )}
+                  </div>
+                )}
+
+                {sec.id === "clarity" && (
+                  <div className="space-y-2" data-testid="analysis-teaching-clarity">
+                    {analysis.teachingClarity.map((block, idx) => (
+                      <div key={idx} className="rounded-md border p-3 space-y-2" data-testid={`clarity-${idx}`}>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">{block.timestamp}</span>
+                            <span className="text-sm font-medium">{block.concept}</span>
+                            <Badge variant="secondary">{block.durationMin} min</Badge>
+                          </div>
+                          <span className={`text-sm font-bold tabular-nums ${clarityColor(block.clarityScore)}`}>
+                            {block.clarityScore}/5
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {block.behaviors.map((b, i) => (
+                            <span key={i} className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${b.includes("No ") ? "bg-red-100/60 text-red-700 dark:bg-red-900/20 dark:text-red-400" : "bg-emerald-100/60 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400"}`}>
+                              {b.includes("No ") ? <TrendingDown className="h-3 w-3 mr-1" /> : <CheckCircle className="h-3 w-3 mr-1" />}
+                              {b}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="text-xs">{block.impact}</p>
+                        <div className="text-xs bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-2" dir="rtl">
+                          <Quote className="h-3 w-3 inline mr-1" />{block.evidence}
+                        </div>
+                      </div>
+                    ))}
+                    {analysis.teachingClarity.length === 0 && (
+                      <p className="text-xs text-muted-foreground px-3 py-2">No continuous teaching blocks detected.</p>
+                    )}
+                  </div>
+                )}
+
+                {sec.id === "questioning" && (
+                  <div className="space-y-3" data-testid="analysis-questioning">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      <div className="rounded-md border px-3 py-2 text-center">
+                        <p className="text-lg font-bold tabular-nums">{analysis.questioningAnalysis.openEnded}</p>
+                        <p className="text-xs text-muted-foreground">Open-ended</p>
+                      </div>
+                      <div className="rounded-md border px-3 py-2 text-center">
+                        <p className="text-lg font-bold tabular-nums">{analysis.questioningAnalysis.closed}</p>
+                        <p className="text-xs text-muted-foreground">Closed</p>
+                      </div>
+                      <div className="rounded-md border px-3 py-2 text-center">
+                        <p className="text-lg font-bold tabular-nums">{analysis.questioningAnalysis.prompts}</p>
+                        <p className="text-xs text-muted-foreground">Engagement Prompts</p>
+                      </div>
+                      <div className="rounded-md border px-3 py-2 text-center">
+                        <p className="text-lg font-bold tabular-nums">{analysis.questioningAnalysis.rhetorical}</p>
+                        <p className="text-xs text-muted-foreground">Rhetorical</p>
+                      </div>
+                    </div>
+                    <p className="text-xs">{analysis.questioningAnalysis.insight}</p>
+                    {analysis.questioningAnalysis.examples.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Examples</p>
+                        {analysis.questioningAnalysis.examples.map((ex, i) => (
+                          <div key={i} className="flex items-start gap-2 text-xs bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-2">
+                            <Badge variant="secondary" className="flex-shrink-0">{ex.type}</Badge>
+                            <span dir="rtl">{ex.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {sec.id === "confusion" && (
+                  <div className="space-y-2" data-testid="analysis-confusion">
+                    {analysis.confusionMoments.map((cm, idx) => (
+                      <div key={idx} className="rounded-md border p-3 space-y-2" data-testid={`confusion-${idx}`}>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">{cm.timestamp}</span>
+                            <span className="text-sm font-medium">{cm.concept}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary">{cm.signalCount} signals</Badge>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${riskColor(cm.riskLevel)}`}>
+                              {cm.riskLevel} Risk
+                            </span>
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          {cm.messages.map((msg, i) => (
+                            <p key={i} className="text-xs bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-1.5" dir="rtl">
+                              {msg}
+                            </p>
+                          ))}
+                        </div>
+                        <div className={`flex items-start gap-2 text-xs rounded-md px-2.5 py-2 ${cm.teacherResponse.includes("clarification") ? "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400" : "bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400"}`}>
+                          <ArrowRight className="h-3 w-3 flex-shrink-0 mt-0.5" />
+                          <span>{cm.teacherResponse}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{cm.riskAssessment}</p>
+                      </div>
+                    ))}
+                    {analysis.confusionMoments.length === 0 && (
+                      <p className="text-xs text-muted-foreground px-3 py-2">No confusion clusters detected in student chat.</p>
+                    )}
+                  </div>
+                )}
+
+                {sec.id === "patterns" && (
+                  <div className="space-y-2" data-testid="analysis-patterns">
+                    {analysis.teachingPatterns.map((pat, idx) => (
+                      <div key={idx} className="rounded-md border p-3 space-y-2" data-testid={`pattern-${idx}`}>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-sm font-medium">{pat.pattern}</span>
+                          <Badge variant="secondary">{pat.occurrences}x</Badge>
+                        </div>
+                        <p className="text-xs">{pat.impact}</p>
+                        <div className="space-y-1">
+                          {pat.details.map((d, i) => (
+                            <p key={i} className="text-xs bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-1.5">{d}</p>
+                          ))}
+                        </div>
+                        <div className="flex items-start gap-2 text-xs text-primary">
+                          <ArrowRight className="h-3 w-3 flex-shrink-0 mt-0.5" />
+                          <span>{pat.recommendation}</span>
+                        </div>
+                      </div>
+                    ))}
+                    {analysis.teachingPatterns.length === 0 && (
+                      <p className="text-xs text-muted-foreground px-3 py-2">No recurring teaching patterns detected.</p>
+                    )}
+                  </div>
+                )}
+
+                {sec.id === "micro" && (
+                  <div className="space-y-3" data-testid="analysis-micro-moments">
+                    {analysis.microMoments.strong.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <Sparkles className="h-3.5 w-3.5" />
+                          Strong Moments
+                        </p>
+                        {analysis.microMoments.strong.map((m, idx) => (
+                          <div key={idx} className="rounded-md border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/50 dark:bg-emerald-950/20 p-3 space-y-1.5" data-testid={`micro-strong-${idx}`}>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">{m.timestamp}</span>
+                            </div>
+                            <p className="text-xs font-medium">{m.what}</p>
+                            <p className="text-xs text-muted-foreground">{m.why}</p>
+                            <p className="text-xs bg-emerald-100/60 dark:bg-emerald-900/20 rounded px-2 py-1 text-emerald-800 dark:text-emerald-300">{m.evidence}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {analysis.microMoments.risk.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-red-700 dark:text-red-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          Risk Moments
+                        </p>
+                        {analysis.microMoments.risk.map((m, idx) => (
+                          <div key={idx} className="rounded-md border border-red-200 dark:border-red-800/40 bg-red-50/50 dark:bg-red-950/20 p-3 space-y-1.5" data-testid={`micro-risk-${idx}`}>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">{m.timestamp}</span>
+                            </div>
+                            <p className="text-xs font-medium">{m.what}</p>
+                            <p className="text-xs text-muted-foreground">{m.why}</p>
+                            <p className="text-xs bg-red-100/60 dark:bg-red-900/20 rounded px-2 py-1 text-red-800 dark:text-red-300">{m.evidence}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {analysis.microMoments.strong.length === 0 && analysis.microMoments.risk.length === 0 && (
+                      <p className="text-xs text-muted-foreground px-3 py-2">No micro-moments detected.</p>
+                    )}
+                  </div>
+                )}
+
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 

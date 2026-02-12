@@ -6,6 +6,16 @@ The dashboard is **session-agnostic** — it auto-detects the session ID from CS
 
 # Recent Changes
 
+- **2026-02-12**: Deep Transcript Analysis (6 dimensions)
+  - Concept Mastery Map: correlates concepts with teaching time, student results, confusion signals, effectiveness
+  - Teaching Clarity Evaluation: scores 1-5 on clarity techniques (step-by-step, examples, verification, transitions)
+  - Questioning Quality Analysis: counts open-ended vs closed questions, engagement prompts, rhetorical questions
+  - Confusion Moment Detection: clusters student confusion in chat, checks teacher response, assigns risk level
+  - Teaching Pattern Recognition: identifies recurring behaviors (over-explaining, under-explaining, ignoring confusion)
+  - Micro-Moment Highlights: top 3 strong + top 3 risk moments with specific evidence
+  - Removed ALL vague language ("may", "could", "might", "suggests") — every insight is definitive with data evidence
+  - New frontend TranscriptAnalysisSection component with 6 collapsible subsections
+  - transcriptAnalysis object added to qaEvaluation API response
 - **2026-02-11**: Converted entire UI from Arabic RTL to English LTR
   - HTML lang="en" dir="ltr", fonts changed to Inter/Open Sans
   - All dashboard labels, headings, metrics in English
