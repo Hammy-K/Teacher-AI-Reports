@@ -9,7 +9,7 @@ import {
   ThumbsUp, AlertTriangle, BookOpen, ClipboardCheck, ChevronDown, ChevronLeft, ChevronRight,
   ListChecks, UsersRound, Target, Timer, Lightbulb, MessageSquare, GraduationCap,
   ShieldCheck, Star, ArrowRight, Brain, Eye, HelpCircle, Zap, TrendingUp, TrendingDown,
-  Sparkles, Search, Quote
+  Sparkles, Search, Quote, Heart, Mic, Award, SmilePlus, Volume2
 } from "lucide-react";
 
 interface ActivityCorrectness {
@@ -36,6 +36,8 @@ interface QuestionAnalysis {
   correct: number;
   percent: number;
   insights: string[];
+  teacherExplanationMin?: number;
+  teacherExplanationTopic?: string;
 }
 
 interface CombinedAnalysis {
@@ -202,6 +204,56 @@ interface DashboardData {
       microMoments: {
         strong: { type: string; timestamp: string; what: string; why: string; evidence: string }[];
         risk: { type: string; timestamp: string; what: string; why: string; evidence: string }[];
+      };
+    };
+    teacherCommunication?: {
+      explanationReviews: {
+        timestamp: string;
+        durationMin: number;
+        concept: string;
+        strengths: string[];
+        improvements: string[];
+        evidence: string;
+        impactPrediction: string;
+      }[];
+      toneAnalysis: {
+        frequency: number;
+        durationMin: number;
+        rating: string;
+        strengths: string[];
+        improvements: string[];
+        examples: { timestamp: string; text: string }[];
+        studentImpact: string;
+      };
+      reinforcementAnalysis: {
+        totalCount: number;
+        distribution: {
+          praiseForCorrectness: number;
+          effortEncouragement: number;
+          motivationBeforeTasks: number;
+          recoveryAfterMistakes: number;
+        };
+        strengths: string[];
+        improvements: string[];
+        outcomeLink: string;
+      };
+      communicationPatterns: {
+        pattern: string;
+        occurrences: number;
+        strengths: string;
+        growth: string;
+        evidence: string;
+      }[];
+      communicationScore: {
+        score: number;
+        rating: string;
+        justification: string;
+        breakdown: {
+          explanationClarity: number;
+          encouragementFrequency: number;
+          reinforcementBalance: number;
+          engagementCorrelation: number;
+        };
       };
     };
     summary: {
@@ -789,10 +841,19 @@ function QuestionBreakdown({ questions, prefix }: { questions: QuestionAnalysis[
                 </div>
               </div>
               <CorrectnessBar percent={q.percent} />
-              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
                 <span>Answered: {q.answered}/{q.seen}</span>
                 <span>Correct: {q.correct}/{q.answered}</span>
+                <span>Correctness: {q.percent}%</span>
               </div>
+              {(q.teacherExplanationMin !== undefined && q.teacherExplanationMin > 0) && (
+                <div className="flex items-center gap-2 text-xs bg-muted/40 dark:bg-muted/20 rounded px-2 py-1.5" data-testid={`${prefix}-q-teach-${qIdx}`}>
+                  <BookOpen className="h-3 w-3 text-primary flex-shrink-0" />
+                  <span>
+                    Teacher explained{q.teacherExplanationTopic ? ` "${q.teacherExplanationTopic}"` : ''} for <span className="font-semibold">{q.teacherExplanationMin} min</span> before this activity
+                  </span>
+                </div>
+              )}
               {q.insights.length > 0 && (
                 <div className="space-y-1 pt-1">
                   {q.insights.map((ins, insIdx) => (
@@ -1048,6 +1109,235 @@ function SingleActivityBlock({ instance: inst, prefix }: { instance: ActivityIns
         <FeedbackInline feedback={inst.feedback} prefix={prefix} />
       </CardContent>
     </Card>
+  );
+}
+
+function TeacherCommunicationSection({ comm }: { comm: NonNullable<DashboardData['qaEvaluation']['teacherCommunication']> }) {
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  const toggle = (id: string) => setOpenSections(p => ({ ...p, [id]: !p[id] }));
+
+  const ratingColor = (r: string) => {
+    if (r === "Strongly Encouraging" || r === "Excellent Communicator") return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400";
+    if (r === "Moderately Encouraging" || r === "Effective Communicator") return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400";
+    return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
+  };
+
+  const sections = [
+    { id: "explanations", label: "Explanation Effectiveness", icon: <BookOpen className="h-3.5 w-3.5" />, count: comm.explanationReviews.length },
+    { id: "tone", label: "Encouraging Tone", icon: <Heart className="h-3.5 w-3.5" />, count: comm.toneAnalysis.frequency },
+    { id: "reinforcement", label: "Positive Reinforcement", icon: <Award className="h-3.5 w-3.5" />, count: comm.reinforcementAnalysis.totalCount },
+    { id: "patterns", label: "Communication Style", icon: <Volume2 className="h-3.5 w-3.5" />, count: comm.communicationPatterns.length },
+    { id: "score", label: "Communication Score", icon: <Sparkles className="h-3.5 w-3.5" />, count: null },
+  ];
+
+  return (
+    <div className="space-y-3" data-testid="section-teacher-communication">
+      <SectionHeading
+        icon={<Mic className="h-4 w-4" />}
+        title="Teacher Communication & Motivational Style"
+        testId="heading-teacher-communication"
+      />
+      <Card>
+        <CardContent className="pt-6 space-y-1">
+          {sections.map(sec => (
+            <Collapsible key={sec.id} open={openSections[sec.id]} onOpenChange={() => toggle(sec.id)}>
+              <CollapsibleTrigger
+                className="flex items-center justify-between gap-2 w-full text-sm font-medium hover-elevate rounded-md px-3 py-2.5"
+                data-testid={`toggle-comm-${sec.id}`}
+              >
+                <div className="flex items-center gap-2">
+                  {openSections[sec.id] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                  {sec.icon}
+                  <span>{sec.label}</span>
+                </div>
+                {sec.count !== null && <Badge variant="secondary">{sec.count}</Badge>}
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="px-3 pb-3 space-y-3">
+
+                  {sec.id === "explanations" && (
+                    <div className="space-y-2" data-testid="comm-explanations">
+                      {comm.explanationReviews.map((rev, idx) => (
+                        <div key={idx} className="rounded-md border p-3 space-y-2" data-testid={`explanation-review-${idx}`}>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs text-muted-foreground">{rev.timestamp}</span>
+                            <span className="text-sm font-medium">{rev.concept}</span>
+                            <Badge variant="secondary">{rev.durationMin} min</Badge>
+                          </div>
+                          {rev.strengths.length > 0 && (
+                            <div className="space-y-1">
+                              <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1"><ThumbsUp className="h-3 w-3" /> Strengths</p>
+                              {rev.strengths.map((s, i) => (
+                                <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-emerald-400/30">{s}</p>
+                              ))}
+                            </div>
+                          )}
+                          {rev.improvements.length > 0 && (
+                            <div className="space-y-1">
+                              <p className="text-xs font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Improvements</p>
+                              {rev.improvements.map((s, i) => (
+                                <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-amber-400/30">{s}</p>
+                              ))}
+                            </div>
+                          )}
+                          <div className="text-xs bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-2" dir="rtl">
+                            <Quote className="h-3 w-3 inline mr-1" />{rev.evidence}
+                          </div>
+                          <p className="text-xs text-muted-foreground">{rev.impactPrediction}</p>
+                        </div>
+                      ))}
+                      {comm.explanationReviews.length === 0 && (
+                        <p className="text-xs text-muted-foreground px-3 py-2">No explanation segments detected.</p>
+                      )}
+                    </div>
+                  )}
+
+                  {sec.id === "tone" && (
+                    <div className="space-y-3" data-testid="comm-tone">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <div className="rounded-md border px-3 py-2 text-center">
+                          <p className="text-lg font-bold tabular-nums">{comm.toneAnalysis.frequency}</p>
+                          <p className="text-xs text-muted-foreground">Instances</p>
+                        </div>
+                        <div className="rounded-md border px-3 py-2 text-center">
+                          <p className="text-lg font-bold tabular-nums">{comm.toneAnalysis.durationMin} min</p>
+                          <p className="text-xs text-muted-foreground">Duration</p>
+                        </div>
+                        <Badge className={ratingColor(comm.toneAnalysis.rating)}>{comm.toneAnalysis.rating}</Badge>
+                      </div>
+                      {comm.toneAnalysis.strengths.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1"><ThumbsUp className="h-3 w-3" /> Strengths</p>
+                          {comm.toneAnalysis.strengths.map((s, i) => (
+                            <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-emerald-400/30">{s}</p>
+                          ))}
+                        </div>
+                      )}
+                      {comm.toneAnalysis.improvements.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Suggestions</p>
+                          {comm.toneAnalysis.improvements.map((s, i) => (
+                            <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-amber-400/30">{s}</p>
+                          ))}
+                        </div>
+                      )}
+                      {comm.toneAnalysis.examples.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium text-muted-foreground">Evidence</p>
+                          {comm.toneAnalysis.examples.map((ex, i) => (
+                            <div key={i} className="text-xs bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-1.5 flex items-start gap-2">
+                              <span className="text-muted-foreground flex-shrink-0">{ex.timestamp}</span>
+                              <span dir="rtl">{ex.text}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground">{comm.toneAnalysis.studentImpact}</p>
+                    </div>
+                  )}
+
+                  {sec.id === "reinforcement" && (
+                    <div className="space-y-3" data-testid="comm-reinforcement">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <div className="rounded-md border px-3 py-2 text-center">
+                          <p className="text-lg font-bold tabular-nums">{comm.reinforcementAnalysis.distribution.praiseForCorrectness}</p>
+                          <p className="text-xs text-muted-foreground">Praise for Correct</p>
+                        </div>
+                        <div className="rounded-md border px-3 py-2 text-center">
+                          <p className="text-lg font-bold tabular-nums">{comm.reinforcementAnalysis.distribution.effortEncouragement}</p>
+                          <p className="text-xs text-muted-foreground">Effort-based</p>
+                        </div>
+                        <div className="rounded-md border px-3 py-2 text-center">
+                          <p className="text-lg font-bold tabular-nums">{comm.reinforcementAnalysis.distribution.motivationBeforeTasks}</p>
+                          <p className="text-xs text-muted-foreground">Pre-activity</p>
+                        </div>
+                        <div className="rounded-md border px-3 py-2 text-center">
+                          <p className="text-lg font-bold tabular-nums">{comm.reinforcementAnalysis.distribution.recoveryAfterMistakes}</p>
+                          <p className="text-xs text-muted-foreground">Recovery</p>
+                        </div>
+                      </div>
+                      {comm.reinforcementAnalysis.strengths.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1"><ThumbsUp className="h-3 w-3" /> Strengths</p>
+                          {comm.reinforcementAnalysis.strengths.map((s, i) => (
+                            <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-emerald-400/30">{s}</p>
+                          ))}
+                        </div>
+                      )}
+                      {comm.reinforcementAnalysis.improvements.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Suggestions</p>
+                          {comm.reinforcementAnalysis.improvements.map((s, i) => (
+                            <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-amber-400/30">{s}</p>
+                          ))}
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground">{comm.reinforcementAnalysis.outcomeLink}</p>
+                    </div>
+                  )}
+
+                  {sec.id === "patterns" && (
+                    <div className="space-y-2" data-testid="comm-patterns">
+                      {comm.communicationPatterns.map((cp, idx) => (
+                        <div key={idx} className="rounded-md border p-3 space-y-2" data-testid={`comm-pattern-${idx}`}>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="secondary">{cp.pattern}</Badge>
+                            <span className="text-xs text-muted-foreground">{cp.occurrences} occurrences</span>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1"><ThumbsUp className="h-3 w-3" /> Strengths</p>
+                            <p className="text-xs text-muted-foreground pl-3 border-l-2 border-emerald-400/30">{cp.strengths}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-xs font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1"><TrendingUp className="h-3 w-3" /> Growth Opportunities</p>
+                            <p className="text-xs text-muted-foreground pl-3 border-l-2 border-amber-400/30">{cp.growth}</p>
+                          </div>
+                          <div className="text-xs bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-2" dir="rtl">
+                            <Quote className="h-3 w-3 inline mr-1" />{cp.evidence}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {sec.id === "score" && (
+                    <div className="space-y-3" data-testid="comm-score">
+                      <div className="flex items-center gap-4 flex-wrap">
+                        <div className="text-center">
+                          <p className="text-3xl font-bold tabular-nums">{comm.communicationScore.score}</p>
+                          <p className="text-xs text-muted-foreground">/100</p>
+                        </div>
+                        <Badge className={ratingColor(comm.communicationScore.rating)}>{comm.communicationScore.rating}</Badge>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <div className="rounded-md border px-3 py-2 text-center">
+                          <p className="text-lg font-bold tabular-nums">{comm.communicationScore.breakdown.explanationClarity}</p>
+                          <p className="text-xs text-muted-foreground">Clarity /25</p>
+                        </div>
+                        <div className="rounded-md border px-3 py-2 text-center">
+                          <p className="text-lg font-bold tabular-nums">{comm.communicationScore.breakdown.encouragementFrequency}</p>
+                          <p className="text-xs text-muted-foreground">Encourage /25</p>
+                        </div>
+                        <div className="rounded-md border px-3 py-2 text-center">
+                          <p className="text-lg font-bold tabular-nums">{comm.communicationScore.breakdown.reinforcementBalance}</p>
+                          <p className="text-xs text-muted-foreground">Reinforce /25</p>
+                        </div>
+                        <div className="rounded-md border px-3 py-2 text-center">
+                          <p className="text-lg font-bold tabular-nums">{comm.communicationScore.breakdown.engagementCorrelation}</p>
+                          <p className="text-xs text-muted-foreground">Engage /25</p>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{comm.communicationScore.justification}</p>
+                    </div>
+                  )}
+
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          ))}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -1388,6 +1678,10 @@ export default function Dashboard() {
 
         {qaEvaluation && (
           <QAEvaluationSection evaluation={qaEvaluation} />
+        )}
+
+        {qaEvaluation?.teacherCommunication && (
+          <TeacherCommunicationSection comm={qaEvaluation.teacherCommunication} />
         )}
 
         <PedagogySection

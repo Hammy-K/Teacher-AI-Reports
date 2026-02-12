@@ -784,6 +784,314 @@ export class DatabaseStorage implements IStorage {
     return { strong: strong.slice(0, 3), risk: risk.slice(0, 3) };
   }
 
+  private buildTeacherCommunicationInsights(
+    sorted: { startSec: number; endSec: number; text: string }[],
+    chats: any[],
+    activityTimeline: any[],
+    session: any,
+    totalStudents: number
+  ): any {
+    const formatTime = (sec: number) => {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    };
+
+    const continuousBlocks: { startSec: number; endSec: number; texts: string[] }[] = [];
+    if (sorted.length > 0) {
+      let blockStart = sorted[0].startSec;
+      let blockEnd = sorted[0].endSec;
+      let blockTexts = [sorted[0].text];
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].startSec - blockEnd <= 5) {
+          blockEnd = Math.max(blockEnd, sorted[i].endSec);
+          blockTexts.push(sorted[i].text);
+        } else {
+          if (blockEnd - blockStart >= 20) {
+            continuousBlocks.push({ startSec: blockStart, endSec: blockEnd, texts: blockTexts });
+          }
+          blockStart = sorted[i].startSec;
+          blockEnd = sorted[i].endSec;
+          blockTexts = [sorted[i].text];
+        }
+      }
+      if (blockEnd - blockStart >= 20) {
+        continuousBlocks.push({ startSec: blockStart, endSec: blockEnd, texts: blockTexts });
+      }
+    }
+
+    const introPattern = /الحين نتكلم عن|اليوم بنتعلم|الدرس اليوم|نبدأ ب|موضوعنا|بنشرح/i;
+    const stepPattern = /أولا|ثانيا|ثالثا|الخطوة|أول شي|بعدين|ثم|بعد كذا|نبدأ.*ب|أول حاجة/i;
+    const examplePattern = /مثلا|مثال|على سبيل|لو عندنا|تخيل|فرض|يعني مثل|لو كان/i;
+    const summaryPattern = /يعني باختصار|بمعنى|الخلاصة|القصد|نلخص|الملخص/i;
+    const verifyPattern = /واضح|صح|فاهمين|تمام|سؤال|فهمتوا|ماشي|صح ولا لا|عرفتوا/i;
+    const rephrasePattern = /يعني|بمعنى|نقدر نقول|بالعربي|بشكل ثاني|مرة ثانية|نعيد/i;
+    const interactPattern = /اكتبوا|في الشات|ردوا|جاوبوا|ارفعوا|حطوا|اختاروا|شاركوا/i;
+
+    const explanationReviews: any[] = [];
+    for (const block of continuousBlocks) {
+      const combined = block.texts.join(' ');
+      const durationSec = block.endSec - block.startSec;
+      if (durationSec < 30) continue;
+      const topics = this.extractTopics(block.texts);
+
+      const hasIntro = introPattern.test(combined);
+      const hasSteps = stepPattern.test(combined);
+      const hasExample = examplePattern.test(combined);
+      const hasSummary = summaryPattern.test(combined);
+      const hasVerify = verifyPattern.test(combined);
+      const hasRephrase = rephrasePattern.test(combined);
+      const hasInteract = interactPattern.test(combined);
+
+      const strengths: string[] = [];
+      const improvements: string[] = [];
+
+      if (hasIntro) strengths.push("Clear concept introduction detected");
+      if (hasSteps) strengths.push("Logical step-by-step breakdown used");
+      if (hasExample) strengths.push("Example or demonstration provided");
+      if (hasSummary) strengths.push("Summary or reinforcement statement included");
+      if (hasVerify) strengths.push("Checked student understanding");
+      if (hasRephrase) strengths.push("Rephrased concept for clarity");
+      if (hasInteract) strengths.push("Encouraged student interaction");
+
+      if (!hasIntro) improvements.push("Add a clear concept introduction before diving into details");
+      if (!hasSteps) improvements.push("Break the explanation into smaller, numbered steps");
+      if (!hasExample) improvements.push("Use real-world examples or analogies to make the concept concrete");
+      if (!hasSummary) improvements.push("End with a brief summary to reinforce key points");
+      if (!hasVerify) improvements.push("Ask verification questions to check student understanding");
+      if (!hasInteract) improvements.push("Prompt students to participate (e.g., 'write your answer in chat')");
+
+      const nearbyActivities = activityTimeline.filter(a => {
+        const actStartSec = this.parseTimeToSeconds(a.startTime) || 0;
+        return actStartSec > block.endSec && actStartSec < block.endSec + 300;
+      });
+
+      let impactPrediction: string;
+      if (nearbyActivities.length > 0) {
+        const avgCorr = Math.round(nearbyActivities.reduce((s: number, a: any) => s + a.correctPercent, 0) / nearbyActivities.length);
+        if (avgCorr >= 70) {
+          impactPrediction = `The activity following this explanation scored ${avgCorr}% — the explanation effectively prepared students for the task.`;
+        } else if (avgCorr >= 40) {
+          impactPrediction = `The activity following this explanation scored ${avgCorr}% — the explanation partially prepared students but gaps remain. ${improvements.length > 0 ? 'Implementing the suggested improvements would increase comprehension.' : ''}`;
+        } else {
+          impactPrediction = `The activity following this explanation scored only ${avgCorr}% — the explanation did not prepare students adequately. A fundamentally different approach is needed.`;
+        }
+      } else {
+        impactPrediction = `No activity directly followed this explanation to measure its impact. Using ${strengths.length}/7 effective teaching techniques.`;
+      }
+
+      explanationReviews.push({
+        timestamp: `${formatTime(block.startSec)}–${formatTime(block.endSec)}`,
+        durationMin: Math.round(durationSec / 60 * 10) / 10,
+        concept: topics,
+        strengths,
+        improvements,
+        evidence: combined.substring(0, 200),
+        impactPrediction,
+      });
+    }
+
+    const encouragePattern = /ممتاز|أحسنت|رائع|شاطر|تمام|كويس|جميل|صح عليك|برافو|ممتاز جداً|فكرة حلوة|إجابة ممتازة|جرب مرة ثانية|لا بأس|قريب جداً/i;
+    let encourageCount = 0;
+    let encourageDurationSec = 0;
+    const encourageExamples: { timestamp: string; text: string }[] = [];
+
+    for (const seg of sorted) {
+      if (encouragePattern.test(seg.text)) {
+        encourageCount++;
+        encourageDurationSec += (seg.endSec - seg.startSec);
+        if (encourageExamples.length < 5) {
+          encourageExamples.push({
+            timestamp: formatTime(seg.startSec),
+            text: seg.text.substring(0, 100),
+          });
+        }
+      }
+    }
+
+    const toneStrengths: string[] = [];
+    const toneImprovements: string[] = [];
+
+    if (encourageCount >= 5) toneStrengths.push(`Used encouraging language ${encourageCount} times throughout the session — consistent positive reinforcement`);
+    else if (encourageCount >= 2) toneStrengths.push(`Used encouraging language ${encourageCount} times — some positive reinforcement detected`);
+
+    const studentChats = chats.filter((c: any) => c.userType === 'STUDENT');
+    const positiveUsers = session?.positiveUsers || 0;
+    const negativeUsers = session?.negativeUsers || 0;
+    const neutralUsers = session?.neutralUsers || 0;
+    const totalSentiment = positiveUsers + negativeUsers + neutralUsers;
+    const positivePercent = totalSentiment > 0 ? Math.round((positiveUsers / totalSentiment) * 100) : 0;
+
+    if (positivePercent >= 70) toneStrengths.push(`Student sentiment is ${positivePercent}% positive — the encouraging tone is effective`);
+
+    if (encourageCount < 3) toneImprovements.push("Increase frequency of praise — aim for at least 5 encouraging statements per session");
+    if (encourageCount > 0) {
+      const afterMistake = sorted.filter(seg => {
+        if (!encouragePattern.test(seg.text)) return false;
+        const nearbyLow = activityTimeline.some(a => {
+          const actEnd = this.parseTimeToSeconds(a.endTime) || 0;
+          return actEnd > 0 && seg.startSec > actEnd && seg.startSec < actEnd + 60 && a.correctPercent < 50;
+        });
+        return nearbyLow;
+      });
+      if (afterMistake.length === 0) toneImprovements.push("Use encouragement after mistakes — reinforce effort, not just correctness");
+    } else {
+      toneImprovements.push("No encouraging language detected — add praise for correct answers and effort");
+      toneImprovements.push("Use recovery encouragement after student mistakes (e.g., 'close, try again')");
+    }
+
+    let toneRating: string;
+    if (encourageCount >= 5 && positivePercent >= 70) toneRating = "Strongly Encouraging";
+    else if (encourageCount >= 3 || positivePercent >= 60) toneRating = "Moderately Encouraging";
+    else if (encourageCount >= 1) toneRating = "Neutral";
+    else toneRating = "Needs Improvement";
+
+    const studentImpact = positivePercent >= 70
+      ? `The encouraging tone directly correlates with ${positivePercent}% positive student sentiment and ${studentChats.length} chat messages. Students are engaged and comfortable participating.`
+      : positivePercent >= 50
+      ? `Student sentiment is ${positivePercent}% positive. Increasing encouragement frequency would improve engagement and participation.`
+      : `Student sentiment is only ${positivePercent}% positive. The lack of encouraging language is contributing to low engagement. ${studentChats.length < 10 ? `Only ${studentChats.length} student chat messages were recorded — students are disengaged.` : ''}`;
+
+    const toneAnalysis = {
+      frequency: encourageCount,
+      durationMin: Math.round(encourageDurationSec / 60 * 10) / 10,
+      rating: toneRating,
+      strengths: toneStrengths,
+      improvements: toneImprovements,
+      examples: encourageExamples,
+      studentImpact,
+    };
+
+    const praiseForCorrect = sorted.filter(seg => {
+      if (!encouragePattern.test(seg.text)) return false;
+      return activityTimeline.some(a => {
+        const actEnd = this.parseTimeToSeconds(a.endTime) || 0;
+        return actEnd > 0 && seg.startSec > actEnd && seg.startSec < actEnd + 120 && a.correctPercent >= 60;
+      });
+    }).length;
+
+    const effortEncouragement = sorted.filter(seg => {
+      return /جرب|حاول|لا بأس|قريب|شوي كمان|برضو كويس/i.test(seg.text);
+    }).length;
+
+    const motivationBefore = sorted.filter(seg => {
+      if (!/يلا|خلونا|نبدأ|جاهزين|حماس/i.test(seg.text)) return false;
+      return activityTimeline.some(a => {
+        const actStart = this.parseTimeToSeconds(a.startTime) || 0;
+        return actStart > 0 && seg.startSec > actStart - 60 && seg.startSec < actStart;
+      });
+    }).length;
+
+    const recoveryAfterMistake = sorted.filter(seg => {
+      if (!/لا بأس|عادي|جرب مرة ثانية|قريب جداً|الفكرة صح بس/i.test(seg.text)) return false;
+      return activityTimeline.some(a => {
+        const actEnd = this.parseTimeToSeconds(a.endTime) || 0;
+        return actEnd > 0 && seg.startSec > actEnd && seg.startSec < actEnd + 120 && a.correctPercent < 50;
+      });
+    }).length;
+
+    const totalReinforcement = praiseForCorrect + effortEncouragement + motivationBefore + recoveryAfterMistake;
+
+    const reinforceStrengths: string[] = [];
+    const reinforceImprovements: string[] = [];
+
+    if (praiseForCorrect >= 2) reinforceStrengths.push(`Praised correct answers ${praiseForCorrect} time(s) after activities — students see their effort recognized`);
+    if (effortEncouragement >= 2) reinforceStrengths.push(`Used effort-based encouragement ${effortEncouragement} time(s) — reinforces growth mindset`);
+    if (motivationBefore >= 1) reinforceStrengths.push(`Motivated students before ${motivationBefore} activity/activities — builds confidence before tasks`);
+    if (recoveryAfterMistake >= 1) reinforceStrengths.push(`Provided recovery encouragement after ${recoveryAfterMistake} low-scoring activity/activities — normalizes mistakes`);
+
+    if (praiseForCorrect === 0) reinforceImprovements.push("Praise correct answers immediately after activities to reinforce learning");
+    if (effortEncouragement === 0) reinforceImprovements.push("Encourage effort and partial thinking, not just final correct answers");
+    if (motivationBefore === 0) reinforceImprovements.push("Add motivational language before activities to build student confidence");
+    if (recoveryAfterMistake === 0) reinforceImprovements.push("After low-scoring activities, use recovery language to normalize mistakes and encourage retry");
+
+    const chatParticipationRate = totalStudents > 0 ? Math.round((new Set(studentChats.map((c: any) => c.creatorId)).size / totalStudents) * 100) : 0;
+
+    const reinforcementAnalysis = {
+      totalCount: totalReinforcement,
+      distribution: {
+        praiseForCorrectness: praiseForCorrect,
+        effortEncouragement,
+        motivationBeforeTasks: motivationBefore,
+        recoveryAfterMistakes: recoveryAfterMistake,
+      },
+      strengths: reinforceStrengths,
+      improvements: reinforceImprovements,
+      outcomeLink: `Reinforcement frequency: ${totalReinforcement}. Chat participation: ${chatParticipationRate}% of students. Positive sentiment: ${positivePercent}%. ${totalReinforcement >= 5 ? 'The consistent reinforcement is driving participation.' : totalReinforcement >= 2 ? 'Increasing reinforcement would boost engagement further.' : 'The lack of reinforcement is directly linked to low participation.'}`,
+    };
+
+    let stylePattern: string;
+    let styleStrengths: string;
+    let styleGrowth: string;
+    const encourageRatio = sorted.length > 0 ? encourageCount / sorted.length : 0;
+
+    if (encourageCount >= 5 && totalReinforcement >= 4) {
+      stylePattern = "Highly Supportive and Motivating";
+      styleStrengths = `The teacher consistently uses encouraging language (${encourageCount} instances), praise for correctness (${praiseForCorrect}), and effort acknowledgment (${effortEncouragement}). Students respond with ${positivePercent}% positive sentiment.`;
+      styleGrowth = "Maintain this style. Consider varying the type of praise to keep it fresh and authentic.";
+    } else if (encourageCount >= 2 && totalReinforcement >= 2) {
+      stylePattern = "Moderately Encouraging";
+      styleStrengths = `The teacher shows some encouraging behavior (${encourageCount} instances) and reinforcement (${totalReinforcement} total). There is room to increase both frequency and variety.`;
+      styleGrowth = "Double the frequency of encouraging statements. Add effort-based praise and pre-activity motivation.";
+    } else if (encourageCount <= 1 && totalReinforcement <= 1) {
+      stylePattern = "Neutral Informational Delivery";
+      styleStrengths = `The teacher delivers content efficiently but with minimal emotional engagement. Only ${encourageCount} encouraging statement(s) detected.`;
+      styleGrowth = "Add praise after correct answers, encouragement before activities, and recovery statements after mistakes. Aim for at least 5 encouraging moments per session.";
+    } else {
+      stylePattern = "Directive / Lecture-Focused";
+      styleStrengths = `The teacher focuses on content delivery with limited student interaction. ${encourageCount} encouraging statement(s) and ${totalReinforcement} reinforcement instance(s).`;
+      styleGrowth = "Shift from one-way lecture to interactive teaching. Add comprehension checks, praise, and student engagement prompts throughout.";
+    }
+
+    const communicationPatterns = [{
+      pattern: stylePattern,
+      occurrences: encourageCount + totalReinforcement,
+      strengths: styleStrengths,
+      growth: styleGrowth,
+      evidence: encourageExamples.slice(0, 3).map(e => `${e.timestamp}: "${e.text}"`).join(' | ') || 'No encouraging language detected in transcript',
+    }];
+
+    let commScoreValue = 0;
+    const clarityScore = explanationReviews.length > 0
+      ? Math.round(explanationReviews.reduce((s, r) => s + r.strengths.length, 0) / explanationReviews.length * 10) / 10
+      : 0;
+    commScoreValue += Math.min(clarityScore / 7 * 25, 25);
+    commScoreValue += Math.min(encourageCount / 5 * 25, 25);
+    commScoreValue += Math.min(totalReinforcement / 8 * 25, 25);
+    const engagementCorrelation = (chatParticipationRate / 100 * 12.5) + (positivePercent / 100 * 12.5);
+    commScoreValue += Math.min(engagementCorrelation, 25);
+    commScoreValue = Math.round(commScoreValue);
+
+    let commRating: string;
+    if (commScoreValue >= 80) commRating = "Excellent Communicator";
+    else if (commScoreValue >= 60) commRating = "Effective Communicator";
+    else if (commScoreValue >= 40) commRating = "Developing Communication Skills";
+    else commRating = "Needs Communication Coaching";
+
+    const commJustification = `Score: ${commScoreValue}/100. Explanation clarity: ${explanationReviews.length} blocks with avg ${Math.round(clarityScore * 10) / 10}/7 techniques. Encouragement: ${encourageCount} instances. Reinforcement: ${totalReinforcement} total. Student engagement: ${chatParticipationRate}% chat participation, ${positivePercent}% positive sentiment.`;
+
+    const communicationScore = {
+      score: commScoreValue,
+      rating: commRating,
+      justification: commJustification,
+      breakdown: {
+        explanationClarity: Math.round(Math.min(clarityScore / 7 * 25, 25)),
+        encouragementFrequency: Math.round(Math.min(encourageCount / 5 * 25, 25)),
+        reinforcementBalance: Math.round(Math.min(totalReinforcement / 8 * 25, 25)),
+        engagementCorrelation: Math.round(Math.min(engagementCorrelation, 25)),
+      },
+    };
+
+    return {
+      explanationReviews,
+      toneAnalysis,
+      reinforcementAnalysis,
+      communicationPatterns,
+      communicationScore,
+    };
+  }
+
   private buildActivityTimeline(
     activities: any[],
     sorted: { startSec: number; endSec: number; text: string }[],
@@ -979,6 +1287,7 @@ export class DatabaseStorage implements IStorage {
     const confusionMoments = this.buildConfusionMoments(sorted, chats);
     const teachingPatterns = this.buildTeachingPatterns(sorted, activityTimeline, chats, confusionMoments);
     const microMoments = this.buildMicroMoments(activityTimeline, confusionMoments, teachingClarity, sorted);
+    const teacherCommunication = this.buildTeacherCommunicationInsights(sorted, chats, activityTimeline, session, totalStudents);
 
     const formatTime = (sec: number) => {
       const h = Math.floor(sec / 3600);
@@ -1412,6 +1721,7 @@ export class DatabaseStorage implements IStorage {
         teachingPatterns,
         microMoments,
       },
+      teacherCommunication,
       summary: {
         totalStudents,
         totalQuestions,
@@ -1602,6 +1912,26 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
+    const actStartSec = this.parseTimeToSeconds(act.startTime || '');
+    const transcriptTimed = transcripts.map(t => ({
+      startSec: this.parseTimeToSeconds(t.startTime || ''),
+      endSec: this.parseTimeToSeconds(t.endTime || ''),
+      text: t.text || '',
+    })).filter(t => t.startSec !== null && t.endSec !== null) as { startSec: number; endSec: number; text: string }[];
+
+    let preTeachDurationMin = 0;
+    let preTeachTopics = '';
+    if (actStartSec !== null) {
+      const preTeachSegments = transcriptTimed.filter(t =>
+        t.endSec <= actStartSec && t.startSec >= actStartSec - 300
+      );
+      if (preTeachSegments.length > 0) {
+        const totalSec = preTeachSegments.reduce((s, t) => s + (t.endSec - t.startSec), 0);
+        preTeachDurationMin = Math.round(totalSec / 60 * 10) / 10;
+        preTeachTopics = this.extractTopics(preTeachSegments.map(t => t.text));
+      }
+    }
+
     const questions = Object.entries(byQuestion).map(([id, q]) => {
       const cleanText = q.text.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
       const percent = q.answered > 0 ? Math.round((q.correct / q.answered) * 100) : 0;
@@ -1634,6 +1964,8 @@ export class DatabaseStorage implements IStorage {
         correct: q.correct,
         percent,
         insights,
+        teacherExplanationMin: preTeachDurationMin,
+        teacherExplanationTopic: preTeachTopics,
       };
     });
 

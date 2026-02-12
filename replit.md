@@ -6,6 +6,15 @@ The dashboard is **session-agnostic** — it auto-detects the session ID from CS
 
 # Recent Changes
 
+- **2026-02-12**: Teacher Communication & Motivational Style Analysis
+  - Explanation Effectiveness Evaluation: merges transcript segments into explanation blocks, detects 7 teaching techniques (intro, steps, examples, summary, verify, rephrase, interact), coaching feedback with strengths/improvements
+  - Encouraging Tone Detection: Arabic encouragement pattern matching, frequency/duration tracking, tone rating (Strongly Encouraging → Needs Improvement)
+  - Positive Reinforcement Analysis: 4 categories (praise for correctness, effort-based, pre-activity motivation, recovery after mistakes), distribution tracking
+  - Communication Style Pattern Detection: classifies teacher style (Highly Supportive → Directive/Lecture-Focused)
+  - Communication Effectiveness Score: composite 0-100 from clarity (25%), encouragement (25%), reinforcement (25%), engagement correlation (25%)
+  - Per-question teacher explanation details: each question now shows pre-activity teacher explanation time and topic
+  - New frontend TeacherCommunicationSection component with 5 collapsible subsections
+  - teacherCommunication object added to qaEvaluation API response
 - **2026-02-12**: Deep Transcript Analysis (6 dimensions)
   - Concept Mastery Map: correlates concepts with teaching time, student results, confusion signals, effectiveness
   - Teaching Clarity Evaluation: scores 1-5 on clarity techniques (step-by-step, examples, verification, transitions)

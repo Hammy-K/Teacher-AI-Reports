@@ -1,0 +1,309 @@
+ADDITIONAL REQUIREMENT — Teacher Communication & Motivational Style Analysis
+
+Extend transcript analysis to evaluate teacher communication effectiveness, tone, and motivational behavior. The system must assess how the teacher explains concepts, interacts emotionally with students, and uses reinforcement techniques.
+
+All insights must be evidence-based and derived from transcript and chat data.
+
+4.Y Teacher Explanation Effectiveness Evaluation
+
+The system must evaluate whether the teacher explained concepts effectively and provide coaching-style feedback.
+
+Step 1 — Identify Explanation Segments
+
+Detect transcript segments where the teacher is explaining content. These include:
+
+Concept definitions
+
+Problem-solving walkthroughs
+
+Instruction before activities
+
+Clarification after student mistakes
+
+Merge consecutive transcript lines with ≤5s gap into explanation blocks.
+
+Step 2 — Evaluate Explanation Quality
+
+For each explanation block, analyze:
+
+Structure Quality
+
+Detect if explanation includes:
+
+Clear concept introduction
+
+Logical step-by-step breakdown
+
+Example or demonstration
+
+Summary or reinforcement statement
+
+Comprehension Support
+
+Detect if teacher:
+
+Asked verification questions
+
+Encouraged students to respond
+
+Checked student understanding
+
+Provided alternative explanation phrasing
+
+Step 3 — Generate Explanation Coaching Feedback
+
+Output:
+
+Explanation Effectiveness Review:
+
+Timestamp:
+{Time range}
+
+Concept:
+{Detected topic}
+
+What Teacher Did Well:
+Narrative highlighting strengths such as:
+
+Clarity
+
+Structure
+
+Engagement
+
+Use of examples
+
+Student involvement
+
+How Explanation Could Be Improved:
+Specific coaching suggestions such as:
+
+Simplifying language
+
+Adding verification questions
+
+Breaking explanation into shorter segments
+
+Using real-world analogies
+
+Increasing student interaction
+
+Evidence:
+Arabic transcript excerpt
+
+Impact Prediction:
+Narrative describing how explanation quality may influence student understanding and correctness results.
+
+4.Y.1 Encouraging Tone Detection
+
+Evaluate whether teacher communication demonstrates encouragement and emotional support.
+
+Detect Encouraging Language Patterns
+
+Identify transcript segments containing:
+
+Praise
+
+Supportive reassurance
+
+Confidence-building language
+
+Positive student acknowledgement
+
+Motivational statements
+
+Arabic encouragement patterns include:
+
+/ممتاز|أحسنت|رائع|شاطر|تمام|كويس|جميل|صح عليك|برافو|ممتاز جداً|فكرة حلوة|إجابة ممتازة|جرب مرة ثانية|لا بأس|قريب جداً/i
+Tone Assessment Output
+
+Encouragement & Tone Analysis:
+
+Encouraging Tone Frequency:
+{Count and duration}
+
+Tone Quality Rating:
+
+Strongly Encouraging
+
+Moderately Encouraging
+
+Neutral
+
+Needs Improvement
+
+What Teacher Did Well:
+Narrative describing positive tone usage.
+
+Improvement Suggestions:
+Examples:
+
+Increase frequency of praise
+
+Reinforce effort, not just correctness
+
+Use encouragement after mistakes
+
+Evidence:
+Transcript excerpts
+
+Student Impact Interpretation:
+Narrative linking tone to engagement, participation, and sentiment metrics.
+
+4.Y.2 Positive Reinforcement & Motivation Analysis
+
+Detect whether teacher reinforces correct answers and motivates student participation.
+
+Detect Reinforcement Behaviors
+
+Identify if teacher:
+
+Praised correct answers
+
+Acknowledged student effort
+
+Celebrated class performance
+
+Encouraged retry after mistakes
+
+Motivated students before activities
+
+Used inclusive language (e.g., "let’s solve together")
+
+Reinforcement Effectiveness Output
+
+Positive Reinforcement Review:
+
+Reinforcement Frequency:
+{Count occurrences}
+
+Reinforcement Type Distribution:
+
+Praise for correctness
+
+Effort-based encouragement
+
+Motivation before tasks
+
+Recovery encouragement after mistakes
+
+What Teacher Did Well:
+Narrative explaining effective motivational strategies.
+
+How Reinforcement Could Improve:
+Coaching suggestions such as:
+
+Reinforcing partially correct thinking
+
+Encouraging hesitant students
+
+Increasing motivational language during difficult activities
+
+Reinforcing participation in chat or stage responses
+
+Evidence:
+Transcript excerpts
+
+Student Outcome Link:
+Narrative linking reinforcement to:
+
+Poll correctness changes
+
+Chat participation spikes
+
+Sentiment indicators
+
+4.Y.3 Emotional Teaching Style Pattern Detection
+
+Detect recurring teacher emotional communication patterns.
+
+Examples:
+
+Highly supportive and motivating style
+
+Neutral informational delivery
+
+Directive or lecture-focused delivery
+
+Encouragement primarily after correct answers only
+
+Output:
+
+Detected Communication Style:
+{Pattern Name}
+
+Occurrences:
+{Count}
+
+Strengths:
+Narrative description
+
+Growth Opportunities:
+Coaching recommendations
+
+Evidence:
+Transcript excerpt summary
+
+4.Y.4 Teacher Communication Effectiveness Score
+
+Calculate composite score using:
+
+Explanation clarity
+
+Encouragement frequency
+
+Reinforcement balance
+
+Student engagement correlation
+
+Student sentiment indicators
+
+Return rating:
+
+Excellent Communicator
+
+Effective Communicator
+
+Developing Communication Skills
+
+Needs Communication Coaching
+
+Include narrative justification.
+
+4.Y.5 Evidence Requirement
+
+Every communication insight MUST include:
+
+Timestamp reference
+
+Arabic transcript excerpt
+
+Behavioral interpretation
+
+Student impact connection
+
+Reject generic or unsupported observations.
+
+4.Y.6 Dashboard Output Extension
+
+Extend DashboardData JSON:
+
+teacherCommunicationInsights: {
+explanationReviews: []
+toneAnalysis: {}
+reinforcementAnalysis: {}
+communicationPatterns: []
+communicationScore: {}
+}
+
+4.Y.7 Coaching Tone Requirement
+
+All generated feedback must use:
+
+Constructive coaching language
+
+Specific actionable improvement suggestions
+
+Balanced recognition of strengths and growth opportunities
+
+Supportive professional tone
