@@ -38,6 +38,7 @@ interface QuestionAnalysis {
   insights: string[];
   teacherExplanationMin?: number;
   teacherExplanationTopic?: string;
+  teacherExplanationVerdict?: string;
 }
 
 interface CombinedAnalysis {
@@ -847,11 +848,18 @@ function QuestionBreakdown({ questions, prefix }: { questions: QuestionAnalysis[
                 <span>Correctness: {q.percent}%</span>
               </div>
               {(q.teacherExplanationMin !== undefined && q.teacherExplanationMin > 0) && (
-                <div className="flex items-center gap-2 text-xs bg-muted/40 dark:bg-muted/20 rounded px-2 py-1.5" data-testid={`${prefix}-q-teach-${qIdx}`}>
-                  <BookOpen className="h-3 w-3 text-primary flex-shrink-0" />
-                  <span>
-                    Teacher explained{q.teacherExplanationTopic ? ` "${q.teacherExplanationTopic}"` : ''} for <span className="font-semibold">{q.teacherExplanationMin} min</span> before this activity
-                  </span>
+                <div className="space-y-1.5" data-testid={`${prefix}-q-teach-${qIdx}`}>
+                  <div className="flex items-center gap-2 text-xs font-medium bg-muted/40 dark:bg-muted/20 rounded px-2 py-1.5">
+                    <BookOpen className="h-3 w-3 text-primary flex-shrink-0" />
+                    <span>
+                      Teacher explained{q.teacherExplanationTopic ? ` "${q.teacherExplanationTopic}"` : ''} for <span className="font-semibold">{q.teacherExplanationMin} min</span> before this activity
+                    </span>
+                  </div>
+                  {q.teacherExplanationVerdict && (
+                    <p className="text-xs text-muted-foreground leading-relaxed pl-3 border-l-2 border-primary/20" data-testid={`${prefix}-q-verdict-${qIdx}`}>
+                      {q.teacherExplanationVerdict}
+                    </p>
+                  )}
                 </div>
               )}
               {q.insights.length > 0 && (

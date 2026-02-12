@@ -1921,8 +1921,9 @@ export class DatabaseStorage implements IStorage {
 
     let preTeachDurationMin = 0;
     let preTeachTopics = '';
+    let preTeachSegments: { startSec: number; endSec: number; text: string }[] = [];
     if (actStartSec !== null) {
-      const preTeachSegments = transcriptTimed.filter(t =>
+      preTeachSegments = transcriptTimed.filter(t =>
         t.endSec <= actStartSec && t.startSec >= actStartSec - 300
       );
       if (preTeachSegments.length > 0) {
@@ -1931,6 +1932,10 @@ export class DatabaseStorage implements IStorage {
         preTeachTopics = this.extractTopics(preTeachSegments.map(t => t.text));
       }
     }
+
+    const preTeachVerdict = this.buildExplanationVerdict(
+      preTeachSegments, chats, actStartSec, preTeachDurationMin, preTeachTopics
+    );
 
     const questions = Object.entries(byQuestion).map(([id, q]) => {
       const cleanText = q.text.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
@@ -1953,8 +1958,10 @@ export class DatabaseStorage implements IStorage {
       } else if (percent >= 40) {
         insights.push(`Low correctness — this topic needs additional explanation or re-teaching next session.`);
       } else if (q.answered > 0) {
-        insights.push(`Very low correctness — the concept was not understood by the majority. The explanation was confusing or too brief before the activity.`);
+        insights.push(`Very low correctness — the concept was not understood by the majority.`);
       }
+
+      const verdictForQuestion = this.buildQuestionSpecificVerdict(percent, preTeachDurationMin, preTeachVerdict);
 
       return {
         questionId: id,
@@ -1966,6 +1973,7 @@ export class DatabaseStorage implements IStorage {
         insights,
         teacherExplanationMin: preTeachDurationMin,
         teacherExplanationTopic: preTeachTopics,
+        teacherExplanationVerdict: verdictForQuestion,
       };
     });
 
@@ -2301,6 +2309,207 @@ export class DatabaseStorage implements IStorage {
       }
     }
     return { confused, examples };
+  }
+
+  private buildExplanationVerdict(
+    preTeachSegments: { startSec: number; endSec: number; text: string }[],
+    chats: SessionChat[],
+    actStartSec: number | null,
+    durationMin: number,
+    topics: string
+  ): {
+    depth: string;
+    interaction: string;
+    studentEngagement: string;
+    confusion: string;
+    pacing: string;
+    topicCount: number;
+    segmentCount: number;
+    avgSegmentSec: number;
+    hadStudentInteraction: boolean;
+    hadConfusion: boolean;
+    confusionExamples: string[];
+    chatCountDuring: number;
+    studentChatCount: number;
+  } {
+    if (preTeachSegments.length === 0 || actStartSec === null) {
+      return {
+        depth: 'No transcript segments found before this activity — the teacher gave no recorded explanation.',
+        interaction: 'No teacher-student interaction detected before this activity.',
+        studentEngagement: 'No student engagement data available for this period.',
+        confusion: 'No confusion signals detected.',
+        pacing: 'No pacing data available.',
+        topicCount: 0,
+        segmentCount: 0,
+        avgSegmentSec: 0,
+        hadStudentInteraction: false,
+        hadConfusion: false,
+        confusionExamples: [],
+        chatCountDuring: 0,
+        studentChatCount: 0,
+      };
+    }
+
+    const combined = preTeachSegments.map(s => s.text).join(' ');
+    const totalSec = preTeachSegments.reduce((s, t) => s + (t.endSec - t.startSec), 0);
+    const segmentCount = preTeachSegments.length;
+    const avgSegmentSec = segmentCount > 0 ? Math.round(totalSec / segmentCount) : 0;
+
+    const topicList = topics.split(', ').filter(t => t.length > 0);
+    const topicCount = topicList.length;
+
+    const questionPatterns = /\?|يلا.*اجاوب|من\s*يعرف|من\s*يقدر|اش\s*رأيكم|شو\s*رأي|وش\s*تقول|ها\s*صح|مين.*عنده|مين.*يبي|طيب\s*اشرح|عطوني|وش.*الفرق|ليش|كيف.*نحسب|كيف.*نعرف/i;
+    const studentCallPatterns = /يلا|اشرح|جاوب|عطني\s*الجواب|ها\s*يا|يا\s*.*اشرح|وش\s*تقول.*يا|من\s*يبي\s*يجاوب/i;
+    const repeatPatterns = /يعني|بمعنى|نعيد|مرة\s*ثانية|نرجع.*نقول|زي\s*ما\s*قلنا/i;
+
+    const hasQuestions = questionPatterns.test(combined);
+    const hasStudentCalls = studentCallPatterns.test(combined);
+    const hasRepetition = repeatPatterns.test(combined);
+    const hadStudentInteraction = hasQuestions || hasStudentCalls;
+
+    let depth = '';
+    if (durationMin >= 4) {
+      if (topicCount > 5) {
+        depth = `The teacher spent ${durationMin} min covering ${topicCount} different topics (${topics}). The explanation was long but spread across too many concepts — ${Math.round(durationMin / topicCount * 60)} seconds average per topic is not enough depth for any single concept.`;
+      } else if (topicCount >= 2) {
+        depth = `The teacher spent ${durationMin} min explaining ${topicCount} topics (${topics}). The explanation covered multiple concepts with reasonable time per topic (${Math.round(durationMin / topicCount * 60)} seconds each).`;
+      } else {
+        depth = `The teacher spent ${durationMin} min on a single topic area (${topics}). This was a thorough, focused explanation with ${segmentCount} teaching segments.`;
+      }
+    } else if (durationMin >= 2) {
+      if (topicCount > 3) {
+        depth = `The teacher spent only ${durationMin} min on ${topicCount} topics (${topics}) — the explanation was rushed, averaging ${Math.round(durationMin / topicCount * 60)} seconds per topic. Not enough time to explain any concept properly.`;
+      } else {
+        depth = `The teacher spent ${durationMin} min on ${topics}. The explanation was brief but focused on ${topicCount} topic${topicCount > 1 ? 's' : ''}.`;
+      }
+    } else if (durationMin > 0) {
+      depth = `The teacher spent only ${durationMin} min explaining before this activity — this was too brief for students to absorb the material. ${topicCount > 1 ? `Covered ${topicCount} topics (${topics}) in under ${Math.round(durationMin * 60)} seconds total.` : `Covered ${topics} in under ${Math.round(durationMin * 60)} seconds.`}`;
+    } else {
+      depth = 'No explanation was given before this activity — students had to rely on prior knowledge.';
+    }
+
+    let interaction = '';
+    if (hasQuestions && hasStudentCalls) {
+      interaction = 'The teacher asked questions and called on students to participate — this was an interactive explanation.';
+      if (hasRepetition) {
+        interaction += ' The teacher also repeated key points to reinforce understanding.';
+      }
+    } else if (hasQuestions) {
+      interaction = 'The teacher asked questions during the explanation but did not call on specific students to answer.';
+    } else if (hasStudentCalls) {
+      interaction = 'The teacher called on students to explain or answer during the teaching.';
+    } else {
+      interaction = 'The teacher lectured without asking questions or inviting student participation — this was a one-way explanation with no student interaction.';
+    }
+
+    const windowStart = actStartSec - (durationMin > 0 ? durationMin * 60 : 300);
+    const windowEnd = actStartSec;
+
+    const studentChatsDuring = chats.filter(c => {
+      if (c.userType !== 'STUDENT') return false;
+      const ts = this.parseTimeToSeconds(c.createdAtTs || '');
+      if (ts === null) return false;
+      return ts >= windowStart && ts <= windowEnd;
+    });
+
+    const allChatsDuring = chats.filter(c => {
+      const ts = this.parseTimeToSeconds(c.createdAtTs || '');
+      if (ts === null) return false;
+      return ts >= windowStart && ts <= windowEnd;
+    });
+
+    const studentChatCount = studentChatsDuring.length;
+    const chatCountDuring = allChatsDuring.length;
+
+    const confusionPatterns = /ما\s*فهم|مو\s*فاهم|مو\s*واضح|ما\s*عرف|صعب|ما\s*فهمت|مش\s*فاهم|كيف|وش\s*يعني|يعني\s*ايش|ما\s*وضح|\?\?|اعيد|ما\s*قدر/i;
+    const confusionChats = studentChatsDuring.filter(c => confusionPatterns.test(c.messageText || ''));
+    const hadConfusion = confusionChats.length > 0;
+    const confusionExamples = confusionChats.slice(0, 3).map(c =>
+      `"${(c.messageText || '').substring(0, 60)}" — ${c.creatorName || 'student'}`
+    );
+
+    let studentEngagement = '';
+    if (studentChatCount >= 5) {
+      studentEngagement = `Students were actively engaged — ${studentChatCount} student messages in chat during the explanation period.`;
+    } else if (studentChatCount >= 2) {
+      studentEngagement = `Students showed moderate engagement — ${studentChatCount} student messages in chat during the explanation.`;
+    } else if (studentChatCount === 1) {
+      studentEngagement = `Only 1 student message in chat during the explanation — students were mostly silent.`;
+    } else {
+      studentEngagement = `Zero student messages in chat during the explanation — no student participation was recorded in the chat.`;
+    }
+
+    let confusion = '';
+    if (hadConfusion) {
+      confusion = `${confusionChats.length} student${confusionChats.length > 1 ? 's' : ''} expressed confusion during the explanation: ${confusionExamples.join('; ')}.`;
+    } else {
+      confusion = 'No confusion signals detected in student chat during the explanation.';
+    }
+
+    let pacing = '';
+    if (avgSegmentSec > 30) {
+      pacing = `The teacher spoke in long uninterrupted blocks (avg ${avgSegmentSec}s per segment) — students had limited opportunity to process or ask questions between segments.`;
+    } else if (avgSegmentSec > 15) {
+      pacing = `The teacher used moderate-length segments (avg ${avgSegmentSec}s each) — reasonable pacing that allowed some processing time.`;
+    } else if (segmentCount > 0) {
+      pacing = `The teacher used short segments (avg ${avgSegmentSec}s each) — quick pacing with frequent pauses or breaks.`;
+    }
+
+    return {
+      depth, interaction, studentEngagement, confusion, pacing,
+      topicCount, segmentCount, avgSegmentSec,
+      hadStudentInteraction, hadConfusion, confusionExamples,
+      chatCountDuring, studentChatCount,
+    };
+  }
+
+  private buildQuestionSpecificVerdict(
+    correctPercent: number,
+    explanationMin: number,
+    verdict: ReturnType<typeof DatabaseStorage.prototype.buildExplanationVerdict>
+  ): string {
+    const parts: string[] = [];
+
+    if (explanationMin > 0) {
+      parts.push(verdict.depth);
+
+      if (correctPercent >= 80) {
+        parts.push(`Students scored ${correctPercent}% — the teaching was effective and students understood the material.${verdict.hadStudentInteraction ? ' The teacher engaged students during the explanation, which contributed to the strong result.' : ''}`);
+      } else if (correctPercent >= 60) {
+        parts.push(`Students scored ${correctPercent}% after this explanation — ${verdict.topicCount > 3 ? `too many topics were covered at once and ${100 - correctPercent}% of students did not absorb all concepts` : `the explanation covered the material but ${100 - correctPercent}% of students still got it wrong`}. ${verdict.hadStudentInteraction ? 'The teacher interacted with students, but not all students kept up.' : 'The teacher did not interact with students to verify understanding during the explanation.'}`);
+      } else if (correctPercent >= 40) {
+        parts.push(`Students only scored ${correctPercent}% after ${explanationMin} min of explanation — the teaching did not land. ${verdict.hadStudentInteraction ? 'The teacher tried to engage students but the content was not absorbed.' : 'The teacher lectured without checking understanding, and students did not absorb the content.'}`);
+      } else if (correctPercent > 0) {
+        parts.push(`Students scored only ${correctPercent}% — the explanation failed. ${verdict.hadConfusion ? 'Students actively showed confusion during the teaching.' : 'Students were silent during the explanation, and the low score shows they did not understand.'} ${verdict.hadStudentInteraction ? '' : 'The teacher did not check for understanding at any point.'}`);
+      } else {
+        parts.push(`0% correctness — no student answered correctly. The explanation completely failed to convey the concept. ${verdict.hadConfusion ? 'Students showed confusion during the teaching and the results confirm they did not understand.' : 'Students were silent during the explanation and the zero score confirms total lack of understanding.'}`);
+      }
+
+      if (verdict.hadConfusion && correctPercent < 60) {
+        parts.push(verdict.confusion);
+      }
+
+      if (!verdict.hadStudentInteraction && correctPercent < 70) {
+        parts.push(verdict.interaction);
+      }
+
+      if (verdict.studentChatCount === 0 && correctPercent < 60) {
+        parts.push(verdict.studentEngagement);
+      }
+    } else {
+      parts.push('No recorded explanation before this activity.');
+      if (correctPercent >= 80) {
+        parts.push(`Students scored ${correctPercent}% without a pre-activity explanation — they relied on prior knowledge and performed well.`);
+      } else if (correctPercent >= 50) {
+        parts.push(`Students scored ${correctPercent}% without a pre-activity explanation — ${100 - correctPercent}% of students did not have enough prior knowledge to answer correctly.`);
+      } else if (correctPercent > 0) {
+        parts.push(`Students scored only ${correctPercent}% with no explanation beforehand — they needed teaching on this topic before being assessed.`);
+      } else {
+        parts.push(`0% correctness with no explanation beforehand — students had no preparation for this content and every answer was wrong.`);
+      }
+    }
+
+    return parts.filter(p => p.length > 0).join(' ');
   }
 
   private generatePedagogyFeedback(
