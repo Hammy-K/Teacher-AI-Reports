@@ -15,15 +15,20 @@ The dashboard is **session-agnostic** — it auto-detects the session ID from CS
   - Per-question teacher explanation details: each question now shows pre-activity teacher explanation time and topic
   - New frontend TeacherCommunicationSection component with 5 collapsible subsections
   - teacherCommunication object added to qaEvaluation API response
-- **2026-02-12**: Deep Transcript Analysis (6 dimensions)
-  - Concept Mastery Map: correlates concepts with teaching time, student results, confusion signals, effectiveness
+- **2026-02-15**: Refactored analysis system — removed topic-count accountability
+  - Removed Concept Mastery Map and Micro-Moment Highlights from Deep Transcript Analysis (now 4 dimensions)
+  - Standardized time-based insight thresholds: >70% = 0-30s sufficient, <50% = 1-2 min needed
+  - Verdicts are multi-dimensional (interaction quality, confusion signals, engagement beyond just time)
+  - "Don't force insights" rule — only meaningful findings reported, successful activities kept brief
+  - Dashboard reordered: Teacher Communication before Deep Transcript Analysis
+  - Added null-safety guards to TranscriptAnalysisSection to prevent crashes with stale data
+- **2026-02-12**: Deep Transcript Analysis (4 dimensions)
   - Teaching Clarity Evaluation: scores 1-5 on clarity techniques (step-by-step, examples, verification, transitions)
   - Questioning Quality Analysis: counts open-ended vs closed questions, engagement prompts, rhetorical questions
-  - Confusion Moment Detection: clusters student confusion in chat, checks teacher response, assigns risk level
-  - Teaching Pattern Recognition: identifies recurring behaviors (over-explaining, under-explaining, ignoring confusion)
-  - Micro-Moment Highlights: top 3 strong + top 3 risk moments with specific evidence
+  - Confusion Moment Detection: clusters student confusion in chat, checks teacher response, assigns risk level (only shown if detected)
+  - Teaching Pattern Recognition: identifies recurring behaviors (only patterns with data shown)
   - Removed ALL vague language ("may", "could", "might", "suggests") — every insight is definitive with data evidence
-  - New frontend TranscriptAnalysisSection component with 6 collapsible subsections
+  - New frontend TranscriptAnalysisSection component with 4 collapsible subsections
   - transcriptAnalysis object added to qaEvaluation API response
 - **2026-02-11**: Converted entire UI from Arabic RTL to English LTR
   - HTML lang="en" dir="ltr", fonts changed to Inter/Open Sans

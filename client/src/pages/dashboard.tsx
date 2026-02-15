@@ -8,7 +8,7 @@ import {
   Users, Clock, ThermometerSun, CheckCircle, BarChart3, Percent,
   ThumbsUp, AlertTriangle, BookOpen, ClipboardCheck, ChevronDown, ChevronLeft, ChevronRight,
   ListChecks, UsersRound, Target, Timer, Lightbulb, MessageSquare, GraduationCap,
-  ShieldCheck, Star, ArrowRight, Brain, Eye, HelpCircle, Zap, TrendingUp, TrendingDown,
+  ShieldCheck, Star, ArrowRight, Eye, HelpCircle, TrendingUp, TrendingDown,
   Sparkles, Search, Quote, Heart, Mic, Award, SmilePlus, Volume2
 } from "lucide-react";
 
@@ -157,17 +157,6 @@ interface DashboardData {
       insights: string[];
     }[];
     transcriptAnalysis?: {
-      conceptMasteryMap: {
-        concept: string;
-        explanationDurationMin: number;
-        timeRanges: string[];
-        avgCorrectness: number | null;
-        confusionSignals: number;
-        effectiveness: string;
-        insight: string;
-        evidence: string[];
-        relatedActivities: string[];
-      }[];
       teachingClarity: {
         timestamp: string;
         durationMin: number;
@@ -202,10 +191,6 @@ interface DashboardData {
         impact: string;
         recommendation: string;
       }[];
-      microMoments: {
-        strong: { type: string; timestamp: string; what: string; why: string; evidence: string }[];
-        risk: { type: string; timestamp: string; what: string; why: string; evidence: string }[];
-      };
     };
     teacherCommunication?: {
       explanationReviews: {
@@ -474,22 +459,12 @@ function QAEvaluationSection({ evaluation }: { evaluation: DashboardData["qaEval
         </Card>
       )}
 
-      {evaluation.transcriptAnalysis && (
-        <TranscriptAnalysisSection analysis={evaluation.transcriptAnalysis} />
-      )}
     </div>
   );
 }
 
 function TranscriptAnalysisSection({ analysis }: { analysis: NonNullable<DashboardData["qaEvaluation"]["transcriptAnalysis"]> }) {
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
-
-  const effectivenessColor = (eff: string) => {
-    if (eff === "High") return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400";
-    if (eff === "Medium") return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400";
-    if (eff === "Low") return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
-    return "bg-muted text-muted-foreground";
-  };
 
   const clarityColor = (score: number) => {
     if (score >= 4) return "text-emerald-600 dark:text-emerald-400";
@@ -502,14 +477,14 @@ function TranscriptAnalysisSection({ analysis }: { analysis: NonNullable<Dashboa
     return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400";
   };
 
-  const sections = [
-    { id: "concepts", icon: <Brain className="h-4 w-4" />, title: "Concept Mastery Map", count: analysis.conceptMasteryMap.length },
-    { id: "clarity", icon: <Eye className="h-4 w-4" />, title: "Teaching Clarity Evaluation", count: analysis.teachingClarity.length },
-    { id: "questioning", icon: <HelpCircle className="h-4 w-4" />, title: "Questioning Quality", count: analysis.questioningAnalysis.total },
-    { id: "confusion", icon: <AlertTriangle className="h-4 w-4" />, title: "Confusion Moments", count: analysis.confusionMoments.length },
-    { id: "patterns", icon: <TrendingUp className="h-4 w-4" />, title: "Teaching Patterns", count: analysis.teachingPatterns.length },
-    { id: "micro", icon: <Zap className="h-4 w-4" />, title: "Micro-Moment Highlights", count: analysis.microMoments.strong.length + analysis.microMoments.risk.length },
+  const allSections = [
+    { id: "clarity", icon: <Eye className="h-4 w-4" />, title: "Teaching Clarity & Technique", count: (analysis.teachingClarity || []).length },
+    { id: "questioning", icon: <HelpCircle className="h-4 w-4" />, title: "Questioning & Interaction Quality", count: analysis.questioningAnalysis?.total || 0 },
+    { id: "confusion", icon: <AlertTriangle className="h-4 w-4" />, title: "Confusion Moments", count: (analysis.confusionMoments || []).length, hideIfEmpty: true },
+    { id: "patterns", icon: <TrendingUp className="h-4 w-4" />, title: "Key Teaching Patterns", count: (analysis.teachingPatterns || []).length, hideIfEmpty: true },
   ];
+
+  const sections = allSections.filter(s => !s.hideIfEmpty || s.count > 0);
 
   return (
     <Card data-testid="card-transcript-analysis">
@@ -518,7 +493,7 @@ function TranscriptAnalysisSection({ analysis }: { analysis: NonNullable<Dashboa
           <Search className="h-4 w-4" />
           Deep Transcript Analysis
         </CardTitle>
-        <Badge variant="secondary" data-testid="badge-analysis-dimensions">6 Dimensions</Badge>
+        <Badge variant="secondary" data-testid="badge-analysis-dimensions">{sections.length} Dimensions</Badge>
       </CardHeader>
       <CardContent className="space-y-1">
         {sections.map((sec) => (
@@ -541,56 +516,9 @@ function TranscriptAnalysisSection({ analysis }: { analysis: NonNullable<Dashboa
             <CollapsibleContent>
               <div className="ml-9 mr-3 mb-3 mt-1 space-y-3">
 
-                {sec.id === "concepts" && (
-                  <div className="space-y-2" data-testid="analysis-concept-mastery">
-                    {analysis.conceptMasteryMap.map((concept, idx) => (
-                      <div key={idx} className="rounded-md border p-3 space-y-2" data-testid={`concept-${idx}`}>
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">{concept.concept}</span>
-                            <Badge variant="secondary">{concept.explanationDurationMin} min</Badge>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {concept.avgCorrectness !== null && (
-                              <span className={`text-sm font-bold tabular-nums ${concept.avgCorrectness >= 75 ? "text-emerald-600 dark:text-emerald-400" : concept.avgCorrectness >= 50 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>
-                                {concept.avgCorrectness}%
-                              </span>
-                            )}
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${effectivenessColor(concept.effectiveness)}`}>
-                              {concept.effectiveness}
-                            </span>
-                          </div>
-                        </div>
-                        <p className="text-xs">{concept.insight}</p>
-                        {concept.confusionSignals > 0 && (
-                          <div className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
-                            <AlertTriangle className="h-3 w-3" />
-                            <span>{concept.confusionSignals} confusion signal(s)</span>
-                          </div>
-                        )}
-                        {concept.relatedActivities.length > 0 && (
-                          <div className="text-xs text-muted-foreground">
-                            <span className="font-medium">Activities:</span> {concept.relatedActivities.join(', ')}
-                          </div>
-                        )}
-                        {concept.evidence.length > 0 && (
-                          <div className="text-xs bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-2 space-y-1">
-                            {concept.evidence.slice(0, 2).map((e, i) => (
-                              <p key={i} className="text-muted-foreground" dir="rtl"><Quote className="h-3 w-3 inline mr-1" />{e}</p>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {analysis.conceptMasteryMap.length === 0 && (
-                      <p className="text-xs text-muted-foreground px-3 py-2">No concepts detected in transcript.</p>
-                    )}
-                  </div>
-                )}
-
                 {sec.id === "clarity" && (
                   <div className="space-y-2" data-testid="analysis-teaching-clarity">
-                    {analysis.teachingClarity.map((block, idx) => (
+                    {(analysis.teachingClarity || []).map((block, idx) => (
                       <div key={idx} className="rounded-md border p-3 space-y-2" data-testid={`clarity-${idx}`}>
                         <div className="flex items-center justify-between gap-2 flex-wrap">
                           <div className="flex items-center gap-2">
@@ -659,7 +587,7 @@ function TranscriptAnalysisSection({ analysis }: { analysis: NonNullable<Dashboa
 
                 {sec.id === "confusion" && (
                   <div className="space-y-2" data-testid="analysis-confusion">
-                    {analysis.confusionMoments.map((cm, idx) => (
+                    {(analysis.confusionMoments || []).map((cm, idx) => (
                       <div key={idx} className="rounded-md border p-3 space-y-2" data-testid={`confusion-${idx}`}>
                         <div className="flex items-center justify-between gap-2 flex-wrap">
                           <div className="flex items-center gap-2">
@@ -695,7 +623,7 @@ function TranscriptAnalysisSection({ analysis }: { analysis: NonNullable<Dashboa
 
                 {sec.id === "patterns" && (
                   <div className="space-y-2" data-testid="analysis-patterns">
-                    {analysis.teachingPatterns.map((pat, idx) => (
+                    {(analysis.teachingPatterns || []).map((pat, idx) => (
                       <div key={idx} className="rounded-md border p-3 space-y-2" data-testid={`pattern-${idx}`}>
                         <div className="flex items-center justify-between gap-2 flex-wrap">
                           <span className="text-sm font-medium">{pat.pattern}</span>
@@ -715,50 +643,6 @@ function TranscriptAnalysisSection({ analysis }: { analysis: NonNullable<Dashboa
                     ))}
                     {analysis.teachingPatterns.length === 0 && (
                       <p className="text-xs text-muted-foreground px-3 py-2">No recurring teaching patterns detected.</p>
-                    )}
-                  </div>
-                )}
-
-                {sec.id === "micro" && (
-                  <div className="space-y-3" data-testid="analysis-micro-moments">
-                    {analysis.microMoments.strong.length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                          <Sparkles className="h-3.5 w-3.5" />
-                          Strong Moments
-                        </p>
-                        {analysis.microMoments.strong.map((m, idx) => (
-                          <div key={idx} className="rounded-md border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/50 dark:bg-emerald-950/20 p-3 space-y-1.5" data-testid={`micro-strong-${idx}`}>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-muted-foreground">{m.timestamp}</span>
-                            </div>
-                            <p className="text-xs font-medium">{m.what}</p>
-                            <p className="text-xs text-muted-foreground">{m.why}</p>
-                            <p className="text-xs bg-emerald-100/60 dark:bg-emerald-900/20 rounded px-2 py-1 text-emerald-800 dark:text-emerald-300">{m.evidence}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {analysis.microMoments.risk.length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium text-red-700 dark:text-red-400 uppercase tracking-wider flex items-center gap-1.5">
-                          <AlertTriangle className="h-3.5 w-3.5" />
-                          Risk Moments
-                        </p>
-                        {analysis.microMoments.risk.map((m, idx) => (
-                          <div key={idx} className="rounded-md border border-red-200 dark:border-red-800/40 bg-red-50/50 dark:bg-red-950/20 p-3 space-y-1.5" data-testid={`micro-risk-${idx}`}>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-muted-foreground">{m.timestamp}</span>
-                            </div>
-                            <p className="text-xs font-medium">{m.what}</p>
-                            <p className="text-xs text-muted-foreground">{m.why}</p>
-                            <p className="text-xs bg-red-100/60 dark:bg-red-900/20 rounded px-2 py-1 text-red-800 dark:text-red-300">{m.evidence}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {analysis.microMoments.strong.length === 0 && analysis.microMoments.risk.length === 0 && (
-                      <p className="text-xs text-muted-foreground px-3 py-2">No micro-moments detected.</p>
                     )}
                   </div>
                 )}
@@ -1690,6 +1574,10 @@ export default function Dashboard() {
 
         {qaEvaluation?.teacherCommunication && (
           <TeacherCommunicationSection comm={qaEvaluation.teacherCommunication} />
+        )}
+
+        {qaEvaluation?.transcriptAnalysis && (
+          <TranscriptAnalysisSection analysis={qaEvaluation.transcriptAnalysis} />
         )}
 
         <PedagogySection

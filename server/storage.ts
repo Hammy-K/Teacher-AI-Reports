@@ -483,17 +483,23 @@ export class DatabaseStorage implements IStorage {
       if (hasVerification) behaviors.push("Student comprehension check detected");
       if (hasTransition) behaviors.push("Transition markers used");
 
-      if (!hasStepByStep) behaviors.push("No step-by-step structure — explanation was unstructured");
-      if (!hasExample) behaviors.push("No examples or analogies — abstract explanation only");
-      if (!hasVerification) behaviors.push("No comprehension check — teacher did not verify student understanding");
+      if (clarityScore <= 2) {
+        if (!hasStepByStep) behaviors.push("No step-by-step structure");
+        if (!hasExample) behaviors.push("No examples or analogies");
+        if (!hasVerification) behaviors.push("No comprehension check");
+      }
 
       let impact: string;
       if (clarityScore >= 4) {
-        impact = `This ${Math.round(durationSec / 60 * 10) / 10} min explanation on "${topics}" used ${clarityScore}/5 clarity techniques — a well-structured delivery that supports strong retention.`;
+        impact = `${clarityScore}/5 clarity techniques used — well-structured delivery.`;
       } else if (clarityScore >= 2) {
-        impact = `This explanation on "${topics}" used ${clarityScore}/5 clarity techniques. Adding ${5 - clarityScore} more (${!hasExample ? 'examples' : ''}${!hasVerification ? ', comprehension checks' : ''}${!hasStepByStep ? ', step-by-step structure' : ''}) would strengthen student understanding.`;
+        impact = `${clarityScore}/5 clarity techniques used — adequate for the content.`;
       } else {
-        impact = `This explanation on "${topics}" used only ${clarityScore}/5 clarity techniques. The teacher delivered content without structure, examples, or verification — this is a direct risk to student comprehension.`;
+        const missing: string[] = [];
+        if (!hasExample) missing.push('examples');
+        if (!hasVerification) missing.push('comprehension checks');
+        if (!hasStepByStep) missing.push('step-by-step structure');
+        impact = `${clarityScore}/5 clarity techniques used. Missing: ${missing.join(', ')}.`;
       }
 
       return {
@@ -525,15 +531,15 @@ export class DatabaseStorage implements IStorage {
       const text = seg.text;
       if (openEndedPattern.test(text)) {
         openEnded++;
-        if (timestamps.length < 5) timestamps.push({ type: 'Open-ended', text: text.substring(0, 80) });
+        if (timestamps.length < 3) timestamps.push({ type: 'Open-ended', text: text.substring(0, 80) });
       }
       if (closedPattern.test(text)) {
         closed++;
-        if (timestamps.length < 5) timestamps.push({ type: 'Closed', text: text.substring(0, 80) });
+        if (timestamps.length < 3) timestamps.push({ type: 'Closed', text: text.substring(0, 80) });
       }
       if (promptPattern.test(text)) {
         prompts++;
-        if (timestamps.length < 5) timestamps.push({ type: 'Engagement prompt', text: text.substring(0, 80) });
+        if (timestamps.length < 3) timestamps.push({ type: 'Engagement prompt', text: text.substring(0, 80) });
       }
       if (rhetoricalPattern.test(text)) {
         rhetorical++;
@@ -543,13 +549,13 @@ export class DatabaseStorage implements IStorage {
     const total = openEnded + closed + prompts;
     let insight: string;
     if (total === 0) {
-      insight = `The teacher asked 0 questions during the entire session. No open-ended, closed, or engagement prompts were detected in the transcript. This is a significant gap — questioning drives student engagement and checks understanding.`;
-    } else if (openEnded >= 3 && prompts >= 2) {
-      insight = `The teacher asked ${total} questions (${openEnded} open-ended, ${closed} closed, ${prompts} engagement prompts). Open-ended questions encourage deeper thinking and were used effectively.`;
-    } else if (prompts >= 3) {
-      insight = `The teacher used ${prompts} engagement prompts (e.g., "write in chat", "answer"). This drove participation but lacked open-ended conceptual questions that test deeper understanding.`;
+      insight = `No questions detected in the transcript — the session was entirely lecture-based with no interactive questioning.`;
+    } else if (openEnded >= 3) {
+      insight = `${total} questions asked (${openEnded} open-ended, ${closed} closed, ${prompts} engagement prompts). Good use of open-ended questions to check deeper understanding.`;
+    } else if (total > 0 && openEnded === 0) {
+      insight = `${total} questions asked but none were open-ended. Adding "why" and "how" questions would test deeper comprehension.`;
     } else {
-      insight = `The teacher asked only ${total} question(s) total. With ${openEnded} open-ended and ${prompts} engagement prompts, the session lacked interactive questioning. Students had limited opportunities to demonstrate understanding.`;
+      insight = `${total} questions asked (${openEnded} open-ended, ${prompts} engagement prompts).`;
     }
 
     return {
@@ -657,28 +663,6 @@ export class DatabaseStorage implements IStorage {
 
     const patterns: any[] = [];
 
-    const overExplained = activityTimeline.filter(a => a.preTeaching.durationMin > 3 && a.correctPercent >= 75);
-    if (overExplained.length >= 1) {
-      patterns.push({
-        pattern: "Over-explaining high-correctness concepts",
-        occurrences: overExplained.length,
-        details: overExplained.map((a: any) => `${a.label} (${a.startTime}): ${a.preTeaching.durationMin} min explanation, students scored ${a.correctPercent}%`),
-        impact: `The teacher spent excessive time (${overExplained.map((a: any) => a.preTeaching.durationMin + ' min').join(', ')}) explaining concepts students already understood. This consumed ${Math.round(overExplained.reduce((s: number, a: any) => s + a.preTeaching.durationMin, 0))} min total — time that is better allocated to practice or weaker topics.`,
-        recommendation: "Reduce explanation time for concepts where students demonstrate strong understanding. Reallocate this time to low-scoring topics.",
-      });
-    }
-
-    const underExplained = activityTimeline.filter(a => a.preTeaching.durationMin < 1 && a.correctPercent < 50);
-    if (underExplained.length >= 1) {
-      patterns.push({
-        pattern: "Rushing through low-correctness concepts",
-        occurrences: underExplained.length,
-        details: underExplained.map((a: any) => `${a.label} (${a.startTime}): only ${a.preTeaching.durationMin} min explanation, students scored ${a.correctPercent}%`),
-        impact: `Students scored poorly (${underExplained.map((a: any) => a.correctPercent + '%').join(', ')}) on concepts that received minimal explanation. The teacher moved to activities before building sufficient understanding.`,
-        recommendation: "Spend at least 2-3 minutes explaining concepts before testing. Use examples and check understanding before starting an activity.",
-      });
-    }
-
     const talkDuringActivities = activityTimeline.filter(a => a.duringTeaching.teacherTalking && a.duringTeaching.durationMin > 0.3);
     if (talkDuringActivities.length >= 2) {
       patterns.push({
@@ -709,8 +693,19 @@ export class DatabaseStorage implements IStorage {
         pattern: "Strong engagement prompting behavior",
         occurrences: engagementPrompts.length,
         details: engagementPrompts.slice(0, 3).map(t => `${formatTime(t.startSec)}: "${t.text.substring(0, 80)}"`),
-        impact: `The teacher actively prompted students to participate ${engagementPrompts.length} times, resulting in ${studentChats.length} student chat messages. This kept students engaged throughout the session.`,
+        impact: `The teacher actively prompted students to participate ${engagementPrompts.length} times, resulting in ${studentChats.length} student chat messages.`,
         recommendation: "Continue this practice — prompting drives engagement and gives the teacher visibility into student understanding.",
+      });
+    }
+
+    const reExplained = activityTimeline.filter(a => a.correctPercent < 50 && a.afterTeaching && a.afterTeaching.durationMin >= 1);
+    if (reExplained.length >= 1) {
+      patterns.push({
+        pattern: "Effective re-explanation after low scores",
+        occurrences: reExplained.length,
+        details: reExplained.map((a: any) => `${a.label} (${a.startTime}): students scored ${a.correctPercent}%, teacher re-explained for ${a.afterTeaching.durationMin} min`),
+        impact: `The teacher re-explained after ${reExplained.length} low-scoring activit${reExplained.length > 1 ? 'ies' : 'y'} — good responsive teaching.`,
+        recommendation: "Continue addressing low scores with follow-up explanation.",
       });
     }
 
@@ -1281,12 +1276,10 @@ export class DatabaseStorage implements IStorage {
 
     const activityTimeline = this.buildActivityTimeline(activities, sorted, chats);
 
-    const conceptMasteryMap = this.buildConceptMasteryMap(sorted, activityTimeline, chats);
     const teachingClarity = this.buildTeachingClarityEvaluation(sorted);
     const questioningAnalysis = this.buildQuestioningAnalysis(sorted, chats, activityTimeline);
     const confusionMoments = this.buildConfusionMoments(sorted, chats);
     const teachingPatterns = this.buildTeachingPatterns(sorted, activityTimeline, chats, confusionMoments);
-    const microMoments = this.buildMicroMoments(activityTimeline, confusionMoments, teachingClarity, sorted);
     const teacherCommunication = this.buildTeacherCommunicationInsights(sorted, chats, activityTimeline, session, totalStudents);
 
     const formatTime = (sec: number) => {
@@ -1714,12 +1707,10 @@ export class DatabaseStorage implements IStorage {
       overallScore: overallAvg,
       activityTimeline,
       transcriptAnalysis: {
-        conceptMasteryMap,
         teachingClarity,
         questioningAnalysis,
         confusionMoments,
         teachingPatterns,
-        microMoments,
       },
       teacherCommunication,
       summary: {
@@ -2368,24 +2359,10 @@ export class DatabaseStorage implements IStorage {
     const hadStudentInteraction = hasQuestions || hasStudentCalls;
 
     let depth = '';
-    if (durationMin >= 4) {
-      if (topicCount > 5) {
-        depth = `The teacher spent ${durationMin} min covering ${topicCount} different topics (${topics}). The explanation was long but spread across too many concepts — ${Math.round(durationMin / topicCount * 60)} seconds average per topic is not enough depth for any single concept.`;
-      } else if (topicCount >= 2) {
-        depth = `The teacher spent ${durationMin} min explaining ${topicCount} topics (${topics}). The explanation covered multiple concepts with reasonable time per topic (${Math.round(durationMin / topicCount * 60)} seconds each).`;
-      } else {
-        depth = `The teacher spent ${durationMin} min on a single topic area (${topics}). This was a thorough, focused explanation with ${segmentCount} teaching segments.`;
-      }
-    } else if (durationMin >= 2) {
-      if (topicCount > 3) {
-        depth = `The teacher spent only ${durationMin} min on ${topicCount} topics (${topics}) — the explanation was rushed, averaging ${Math.round(durationMin / topicCount * 60)} seconds per topic. Not enough time to explain any concept properly.`;
-      } else {
-        depth = `The teacher spent ${durationMin} min on ${topics}. The explanation was brief but focused on ${topicCount} topic${topicCount > 1 ? 's' : ''}.`;
-      }
-    } else if (durationMin > 0) {
-      depth = `The teacher spent only ${durationMin} min explaining before this activity — this was too brief for students to absorb the material. ${topicCount > 1 ? `Covered ${topicCount} topics (${topics}) in under ${Math.round(durationMin * 60)} seconds total.` : `Covered ${topics} in under ${Math.round(durationMin * 60)} seconds.`}`;
+    if (durationMin > 0) {
+      depth = `The teacher spent ${durationMin} min explaining (${topics}) before this activity.`;
     } else {
-      depth = 'No explanation was given before this activity — students had to rely on prior knowledge.';
+      depth = 'No explanation was recorded before this activity.';
     }
 
     let interaction = '';
@@ -2473,39 +2450,38 @@ export class DatabaseStorage implements IStorage {
     if (explanationMin > 0) {
       parts.push(verdict.depth);
 
-      if (correctPercent >= 80) {
-        parts.push(`Students scored ${correctPercent}% — the teaching was effective and students understood the material.${verdict.hadStudentInteraction ? ' The teacher engaged students during the explanation, which contributed to the strong result.' : ''}`);
-      } else if (correctPercent >= 60) {
-        parts.push(`Students scored ${correctPercent}% after this explanation — ${verdict.topicCount > 3 ? `too many topics were covered at once and ${100 - correctPercent}% of students did not absorb all concepts` : `the explanation covered the material but ${100 - correctPercent}% of students still got it wrong`}. ${verdict.hadStudentInteraction ? 'The teacher interacted with students, but not all students kept up.' : 'The teacher did not interact with students to verify understanding during the explanation.'}`);
-      } else if (correctPercent >= 40) {
-        parts.push(`Students only scored ${correctPercent}% after ${explanationMin} min of explanation — the teaching did not land. ${verdict.hadStudentInteraction ? 'The teacher tried to engage students but the content was not absorbed.' : 'The teacher lectured without checking understanding, and students did not absorb the content.'}`);
-      } else if (correctPercent > 0) {
-        parts.push(`Students scored only ${correctPercent}% — the explanation failed. ${verdict.hadConfusion ? 'Students actively showed confusion during the teaching.' : 'Students were silent during the explanation, and the low score shows they did not understand.'} ${verdict.hadStudentInteraction ? '' : 'The teacher did not check for understanding at any point.'}`);
+      if (correctPercent >= 70) {
+        parts.push(`Students scored ${correctPercent}% — effective teaching.`);
+        if (verdict.hadStudentInteraction) {
+          parts.push('The teacher engaged students interactively during the explanation.');
+        }
+      } else if (correctPercent >= 50) {
+        parts.push(`Students scored ${correctPercent}% — ${100 - correctPercent}% still got it wrong.`);
+        if (!verdict.hadStudentInteraction) {
+          parts.push('The teacher did not interact with students to verify understanding.');
+        }
+        if (verdict.hadConfusion) {
+          parts.push(verdict.confusion);
+        }
       } else {
-        parts.push(`0% correctness — no student answered correctly. The explanation completely failed to convey the concept. ${verdict.hadConfusion ? 'Students showed confusion during the teaching and the results confirm they did not understand.' : 'Students were silent during the explanation and the zero score confirms total lack of understanding.'}`);
-      }
-
-      if (verdict.hadConfusion && correctPercent < 60) {
-        parts.push(verdict.confusion);
-      }
-
-      if (!verdict.hadStudentInteraction && correctPercent < 70) {
-        parts.push(verdict.interaction);
-      }
-
-      if (verdict.studentChatCount === 0 && correctPercent < 60) {
-        parts.push(verdict.studentEngagement);
+        parts.push(`Students scored only ${correctPercent}% — the explanation did not land.`);
+        if (!verdict.hadStudentInteraction) {
+          parts.push('No student interaction during the explanation — the teacher lectured without checking understanding.');
+        }
+        if (verdict.hadConfusion) {
+          parts.push(verdict.confusion);
+        }
+        if (verdict.studentChatCount === 0) {
+          parts.push('Zero student engagement in chat during this period.');
+        }
       }
     } else {
-      parts.push('No recorded explanation before this activity.');
-      if (correctPercent >= 80) {
-        parts.push(`Students scored ${correctPercent}% without a pre-activity explanation — they relied on prior knowledge and performed well.`);
+      if (correctPercent >= 70) {
+        parts.push(`No recorded explanation. Students scored ${correctPercent}% — they relied on prior knowledge successfully.`);
       } else if (correctPercent >= 50) {
-        parts.push(`Students scored ${correctPercent}% without a pre-activity explanation — ${100 - correctPercent}% of students did not have enough prior knowledge to answer correctly.`);
-      } else if (correctPercent > 0) {
-        parts.push(`Students scored only ${correctPercent}% with no explanation beforehand — they needed teaching on this topic before being assessed.`);
+        parts.push(`No recorded explanation. Students scored ${correctPercent}% — some students lacked the prior knowledge needed.`);
       } else {
-        parts.push(`0% correctness with no explanation beforehand — students had no preparation for this content and every answer was wrong.`);
+        parts.push(`No recorded explanation. Students scored only ${correctPercent}% — they needed teaching before being assessed.`);
       }
     }
 

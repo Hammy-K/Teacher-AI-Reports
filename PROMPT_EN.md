@@ -394,14 +394,11 @@ Each question in the question breakdown displays a **teacher explanation verdict
 
 **`buildExplanationVerdict` analyzes 5 dimensions:**
 
-1. **Depth Analysis** — Based on duration and topic count:
-   - ≥4 min + >5 topics: "The teacher spent {X} min covering {N} different topics ({topics}). The explanation was long but spread across too many concepts — {Y} seconds average per topic is not enough depth for any single concept."
-   - ≥4 min + 2-5 topics: "The teacher spent {X} min explaining {N} topics ({topics}). The explanation covered multiple concepts with reasonable time per topic ({Y} seconds each)."
-   - ≥4 min + 1 topic: "The teacher spent {X} min on a single topic area ({topics}). This was a thorough, focused explanation with {N} teaching segments."
-   - 2-4 min + >3 topics: "The teacher spent only {X} min on {N} topics ({topics}) — the explanation was rushed, averaging {Y} seconds per topic. Not enough time to explain any concept properly."
-   - 2-4 min + ≤3 topics: "The teacher spent {X} min on {topics}. The explanation was brief but focused on {N} topic(s)."
-   - <2 min: "The teacher spent only {X} min explaining before this activity — this was too brief for students to absorb the material."
-   - 0 min: "No explanation was given before this activity — students had to rely on prior knowledge."
+> **CONTENT IS NOT THE TEACHER'S RESPONSIBILITY**: The number of topics, which topics to teach, and curriculum sequencing are decided by the organization — not the teacher. Never penalize or praise a teacher for covering "too many" or "too few" topics. Only evaluate HOW the teacher delivered the assigned content.
+
+1. **Depth Analysis** — Based on duration (topic count is reported for context, never as criticism):
+   - "The teacher spent {X} min explaining ({topics}) before this activity." (factual, neutral)
+   - 0 min: "No explanation was recorded before this activity."
 
 2. **Interaction Analysis** — Checks transcript for 3 Arabic pattern types:
    - Question patterns: `\?|يلا.*اجاوب|من\s*يعرف|من\s*يقدر|اش\s*رأيكم|...`
@@ -429,55 +426,37 @@ Each question in the question breakdown displays a **teacher explanation verdict
 
 **`buildQuestionSpecificVerdict` combines explanation analysis with correctness:**
 
-The verdict paragraph is assembled from the depth analysis + correctness-specific outcome linkage:
+> **DON'T FORCE INSIGHTS**: Only flag things that are genuinely good or genuinely bad. If the result is fine, keep the verdict brief. Don't manufacture problems or padding.
 
-- ≥80% correctness: "Students scored {X}% — the teaching was effective and students understood the material. {interaction context}"
-- 60-79% correctness: "Students scored {X}% after this explanation — {topic-count-specific detail} and {100-X}% of students still got it wrong. {interaction context}"
-- 40-59% correctness: "Students only scored {X}% after {Y} min of explanation — the teaching did not land. {interaction context}"
-- 1-39% correctness: "Students scored only {X}% — the explanation failed. {confusion/silence context}. {interaction context}"
-- 0% correctness: "0% correctness — no student answered correctly. The explanation completely failed to convey the concept. {confusion/silence context}"
-- No explanation + high score: "Students scored {X}% without a pre-activity explanation — they relied on prior knowledge and performed well."
-- No explanation + low score: "Students scored only {X}% with no explanation beforehand — they needed teaching on this topic before being assessed."
-- No explanation + 0%: "0% correctness with no explanation beforehand — students had no preparation for this content and every answer was wrong."
+> **STANDARD TIME EXPECTATIONS**:
+> - Correctness ≥70%: 0–30 seconds of post-explanation is sufficient
+> - Correctness 50–69%: 0.5–1 min of post-explanation is appropriate
+> - Correctness <50%: 1–2 min of re-explanation is needed
 
-Additional context appended when relevant:
-- If confusion detected AND correctness <60%: append confusion details
-- If no student interaction AND correctness <70%: append interaction analysis
-- If zero student chat AND correctness <60%: append student engagement note
+The verdict paragraph assembles multiple dimensions — only include dimensions that reveal something meaningful:
+
+- **Correctness outcome** (always include): "Students scored {X}%." + brief assessment if notably good or bad
+- **Interaction quality** (only if notable): Was the teacher engaging students, or was it a one-way lecture?
+- **Confusion signals** (only if detected): Student confusion in chat during the explanation
+- **Student engagement** (only if notably high or zero): Chat activity level during explanation
+
+Keep verdicts **concise**. A well-performing activity (≥70%) with adequate teaching needs only 1-2 sentences. Only expand detail for genuinely problematic or genuinely excellent situations.
 
 **Display**: Each question in the question breakdown shows:
 1. "Teacher explained [{topics}] for {X} min before this activity" (header line)
 2. The verdict paragraph (formatted text block with distinct styling)
 
-### 4.9 Deep Transcript Analysis (6 Dimensions)
+### 4.9 Deep Transcript Analysis (4 Dimensions — Concise, Actionable)
 
-The system performs deep analysis of the teacher's transcript across 6 dimensions. All analysis uses Arabic regex pattern detection internally but produces English output. Every insight is definitive with specific evidence — no vague language.
+> **DESIGN PRINCIPLES FOR THIS SECTION**:
+> - **DON'T FORCE INSIGHTS**: If there's nothing meaningfully good or bad, don't generate filler. Skip empty dimensions.
+> - **CONTENT IS NOT THE TEACHER'S RESPONSIBILITY**: Never penalize for topic count, topic selection, or curriculum decisions. Only evaluate teaching delivery quality.
+> - **CONCISENESS**: Each dimension should have one clear summary + supporting data. Avoid repeating the same observation in multiple bullet points.
+> - **MULTI-DIMENSIONAL**: Look beyond time — assess interaction quality, explanation clarity, student engagement signals, and confusion handling.
 
-#### 4.9.1 Concept Mastery Map (`buildConceptMasteryMap`)
+The system performs deep analysis of the teacher's transcript across 4 focused dimensions. All analysis uses Arabic regex pattern detection internally but produces English output. Every insight is definitive with specific evidence.
 
-For each concept detected in the transcript (via Arabic regex → English label):
-
-- **Teaching time**: Sum of segment durations where the concept's regex pattern matches, converted to minutes
-- **Time ranges**: Formatted as H:MM:SS–H:MM:SS, grouped into ranges (new range if gap >60s)
-- **Average correctness**: Mean correctness across activities whose pre-teaching topics include this concept
-- **Confusion signals**: Count of student chat messages matching confusion patterns during this concept's explanation (±30s before, +60s after matching segments)
-- **Effectiveness rating**:
-  - ≥75% avg correctness → "Excellent"
-  - ≥60% → "Effective"
-  - ≥40% → "Needs Reinforcement"
-  - <40% → "Ineffective"
-  - No related activities → "Not assessed"
-- **Definitive insight** (correctness-based):
-  - ≥75%: "The teacher explained '{concept}' for {X} min across {N} segment(s). Students scored {Y}% on related activities — the explanation was clear and well-structured."
-  - 50-74%: "The teacher spent {X} min on '{concept}'. Students scored {Y}% — the explanation covered the topic but did not achieve full comprehension. {confusion count if any}"
-  - <50%: "The teacher spent {X} min on '{concept}' but students scored only {Y}%. The explanation failed to build understanding. {confusion context or gap observation}"
-  - No activity: "The teacher explained '{concept}' for {X} min ({ranges}) but no related activity directly tested this concept."
-- **Evidence**: Up to 2 transcript excerpts (120 chars each)
-- **Related activities**: List of activity labels with correctness percentages
-
-Concepts are sorted by average correctness ascending (weakest first).
-
-#### 4.9.2 Teaching Clarity Evaluation (`buildTeachingClarityEvaluation`)
+#### 4.9.1 Teaching Clarity & Technique (`buildTeachingClarityEvaluation`)
 
 For each continuous teaching block (≥30s duration, gap ≤5s between segments):
 
@@ -492,17 +471,14 @@ For each continuous teaching block (≥30s duration, gap ≤5s between segments)
 | Transition markers | `طيب\|الحين\|ننتقل\|نروح\|نكمل\|خلاص\|يلا\|هسا` | "Transition markers used" |
 
 - **Clarity score**: Count of detected techniques out of 5
-- **Behaviors**: List of detected and missing techniques. Missing techniques listed as definitive gaps:
-  - "No step-by-step structure — explanation was unstructured"
-  - "No examples or analogies — abstract explanation only"
-  - "No comprehension check — teacher did not verify student understanding"
-- **Impact statement** (definitive, linked to following activity):
-  - Score ≥4: "This {X} min explanation on '{topics}' used {N}/5 clarity techniques — a well-structured delivery that supports strong retention."
-  - Score 2-3: "This explanation on '{topics}' used {N}/5 clarity techniques. Adding {missing techniques} would strengthen student understanding."
-  - Score 0-1: "This explanation on '{topics}' used only {N}/5 clarity techniques. The teacher delivered content without structure, examples, or verification — this is a direct risk to student comprehension."
+- **Behaviors**: List of detected techniques. Only list missing techniques if clarity score ≤2 AND a related activity scored <60%.
+- **Impact statement** (concise):
+  - Score ≥4: "{N}/5 clarity techniques used — well-structured delivery."
+  - Score 2-3 + activity ≥60%: "{N}/5 clarity techniques used — adequate for the content."
+  - Score 0-1 OR (score 2-3 + activity <60%): "{N}/5 clarity techniques used. Missing: {missing techniques}. Students scored {X}% on the following activity."
 - **Evidence**: First 200 characters of combined transcript text
 
-#### 4.9.3 Questioning Quality Analysis (`buildQuestioningAnalysis`)
+#### 4.9.2 Questioning & Interaction Quality (`buildQuestioningAnalysis`)
 
 Counts questioning behavior across the entire session transcript:
 
@@ -514,16 +490,16 @@ Counts questioning behavior across the entire session transcript:
 | Rhetorical | `صح ؟\|مو كذا ؟\|واضح ؟\|تمام ؟\|ماشي ؟\|ولا لا ؟` | "Rhetorical" |
 
 - **Total count**: openEnded + closed + prompts
-- **Examples**: Up to 5 timestamped examples with type label and text (80 chars)
-- **Definitive insight**:
-  - 0 total: "The teacher asked 0 questions during the entire session. No open-ended, closed, or engagement prompts were detected in the transcript. This is a significant gap — questioning drives student engagement and checks understanding."
-  - ≥3 open-ended + ≥2 prompts: "The teacher asked {N} questions ({open} open-ended, {closed} closed, {prompts} engagement prompts). Open-ended questions encourage deeper thinking and were used effectively."
-  - ≥3 prompts: "The teacher used {N} engagement prompts (e.g., 'write in chat', 'answer'). This drove participation but lacked open-ended conceptual questions that test deeper understanding."
-  - Low total: "The teacher asked only {N} question(s) total. With {open} open-ended and {prompts} engagement prompts, the session lacked interactive questioning. Students had limited opportunities to demonstrate understanding."
+- **Examples**: Up to 3 timestamped examples with type label and text (80 chars)
+- **Concise insight** — only one statement needed:
+  - 0 total: "No questions detected in the transcript — the session was entirely lecture-based with no interactive questioning."
+  - ≥3 open-ended: "{N} questions asked ({open} open-ended, {closed} closed, {prompts} engagement prompts). Good use of open-ended questions to check deeper understanding."
+  - >0 but 0 open-ended: "{N} questions asked but none were open-ended. Adding 'why' and 'how' questions would test deeper comprehension."
+  - Otherwise: "{N} questions asked ({open} open-ended, {prompts} engagement prompts)."
 
-#### 4.9.4 Confusion Moment Detection (`buildConfusionMoments`)
+#### 4.9.3 Confusion Moment Detection (`buildConfusionMoments`)
 
-Clusters student confusion signals in chat:
+Clusters student confusion signals in chat. Only report if clusters are found — skip this dimension entirely if no confusion is detected.
 
 1. Filter student chats matching confusion patterns (same regex as Section 4.6)
 2. Sort by timestamp
@@ -532,68 +508,29 @@ Clusters student confusion signals in chat:
 
 For each cluster:
 - **Timestamp**: H:MM:SS of cluster start
-- **Concept**: Extracted from transcript segments being taught at that time (transcript within cluster ±60s before, +30s after)
-- **Signal count**: Number of confusion messages in the cluster
+- **Concept**: Extracted from transcript segments being taught at that time
+- **Signal count** + **Risk level**: ≥3 signals → "High" | 2 signals → "Medium"
 - **Messages**: Up to 3 student messages quoted as `"{text}" — {name}`
-- **Teacher response analysis**:
-  - Check transcript 0-60s after cluster end for clarification patterns (`يعني|بمعنى|اقصد|خلني|بشكل ثاني|وضحت|فهمتوا الحين`)
-  - Clarification found: "Teacher provided immediate clarification after confusion signals"
-  - Teacher talked but no clarification: "Teacher continued talking but did not address the confusion directly"
-  - No teacher response: "No teacher response detected — confusion was ignored"
-- **Risk level**: ≥3 signals → "High" | 2 signals → "Medium"
-- **Risk assessment** (definitive):
-  - High: "{N} students expressed confusion about '{concept}' within {X} seconds. This is a critical comprehension breakdown — the concept was not understood."
-  - Medium: "{N} confusion signals about '{concept}' indicate partial understanding gaps."
+- **Teacher response**: Did the teacher address it? (checked via clarification patterns in transcript 0-60s after cluster)
+- **One-line assessment**: "{N} students confused about '{concept}' — teacher {addressed/did not address} it."
 
-#### 4.9.5 Teaching Pattern Recognition (`buildTeachingPatterns`)
+#### 4.9.4 Key Teaching Patterns (`buildTeachingPatterns`)
 
-Identifies 5 recurring behavior patterns across the session:
+Identifies **only patterns that are actually detected** — do not generate empty pattern sections. Maximum 3-4 patterns reported.
 
-1. **Over-explaining high-correctness concepts**: Pre-teaching >3 min on activities scoring ≥75%
-   - Details: "{label} ({time}): {X} min explanation, students scored {Y}%"
-   - Impact: "The teacher spent excessive time ({durations}) explaining concepts students already understood. This consumed {total} min total — time that is better allocated to practice or weaker topics."
-   - Recommendation: "Reduce explanation time for concepts where students demonstrate strong understanding. Reallocate this time to low-scoring topics."
+1. **Speaking during student solving time**: Teacher talk >0.3 min during ≥2 activities
+   - "{N} activities where the teacher spoke during student work. This disrupts independent thinking."
 
-2. **Rushing through low-correctness concepts**: Pre-teaching <1 min on activities scoring <50%
-   - Details: "{label} ({time}): only {X} min explanation, students scored {Y}%"
-   - Impact: "Students scored poorly ({percentages}) on concepts that received minimal explanation. The teacher moved to activities before building sufficient understanding."
-   - Recommendation: "Spend at least 2-3 minutes explaining concepts before testing. Use examples and check understanding before starting an activity."
+2. **Ignoring student confusion**: Confusion moments where teacher did not respond
+   - "{N} confusion moment(s) went unaddressed."
 
-3. **Speaking during student solving time**: Teacher talk >0.3 min during ≥2 activities
-   - Details: "{label} ({time}): teacher talked {X} min about '{topics}'"
-   - Impact: "The teacher interrupted student independent work in {N} activities. This disrupts concentration and reduces the reliability of assessment results."
-   - Recommendation: "Stay silent during activities. If students need help, use chat or wait until the activity ends to explain."
+3. **Strong engagement behavior** (positive): ≥3 engagement prompts + ≥10 student chat messages
+   - "The teacher actively prompted participation {N} times, generating {M} student responses."
 
-4. **Ignoring student confusion signals**: Confusion moments where teacher response includes "ignored" or "did not address"
-   - Details: "{timestamp}: {N} confusion signals about '{concept}' — {teacher response}"
-   - Impact: "{N} confusion moment(s) went unaddressed. Students who expressed confusion did not receive clarification, leading to persistent misunderstanding."
-   - Recommendation: "Monitor the chat during and after explanations. When students express confusion, pause and re-explain the concept with a different approach."
+4. **Effective re-explanation after low scores** (positive): Teacher re-explained after activity with <50% correctness
+   - "The teacher re-explained after students scored {X}% — good responsive teaching."
 
-5. **Strong engagement prompting behavior** (positive pattern): ≥3 engagement prompts in transcript + ≥10 student chat messages
-   - Details: Up to 3 examples: "{timestamp}: '{text}'"
-   - Impact: "The teacher actively prompted students to participate {N} times, resulting in {M} student chat messages. This kept students engaged throughout the session."
-   - Recommendation: "Continue this practice — prompting drives engagement and gives the teacher visibility into student understanding."
-
-#### 4.9.6 Micro-Moment Highlights (`buildMicroMoments`)
-
-Top 3 strong moments + Top 3 risk moments:
-
-**Strong moments** (prioritized by correctness descending):
-- High-correctness activities (≥75%): "{label} achieved {X}% correctness after {Y} min of teaching on '{topics}'."
-  - Why: "Students demonstrated strong understanding of '{topics}'. The explanation duration ({Y} min) was well-calibrated for this concept."
-  - Evidence: "Pre-teaching: {Y} min → Activity result: {X}% correct"
-- High-clarity explanations (clarity score ≥4/5): "Explanation at {timestamp} on '{topics}' scored {N}/5 on clarity (used {behaviors})."
-  - Why: "A high-clarity explanation improves retention. The teacher structured this explanation well."
-  - Evidence: First 100 chars of transcript
-
-**Risk moments** (prioritized by correctness ascending):
-- Low-correctness activities (<40%): "{label} scored only {X}% after {context}."
-  - Why (long explanation): "Despite {Y} min of explanation, students did not understand '{topics}'. The teaching approach was ineffective for this concept."
-  - Why (short explanation): "Insufficient explanation time ({Y} min) before a complex activity led to poor student performance."
-  - Evidence: "Pre-teaching: {Y} min → Activity result: {X}% correct"
-- Confusion events: "{N} students expressed confusion about '{concept}' at {timestamp}."
-  - Why: "{risk assessment}. {teacher response}."
-  - Evidence: Student messages joined by " | "
+Only show patterns that have data. If only 1 pattern is detected, show only 1. If none are detected, skip this dimension entirely.
 
 ### 4.10 Teacher Communication & Motivational Style Analysis (`buildTeacherCommunicationInsights`)
 
@@ -791,79 +728,62 @@ Composite score 0-100, calculated from 4 components (25 points each):
      - Confusion alerts from student chat
      - Specific definitive insights correlating teaching with results
 
-7. **Deep Transcript Analysis Section** — "Deep Transcript Analysis"
-   - 6 collapsible subsections (each with ChevronRight/ChevronDown toggle):
-
-   7a. **Concept Mastery Map** — Table/cards showing each concept with:
-     - Concept name, explanation duration, time ranges
-     - Effectiveness badge (color-coded)
-     - Average correctness bar
-     - Confusion signal count
-     - Definitive insight paragraph
-     - Evidence excerpts and related activity results
-
-   7b. **Teaching Clarity Evaluation** — Cards for each teaching block:
-     - Timestamp range, duration, topic
-     - Clarity score X/5 with star display
-     - Detected behaviors list and missing behaviors
-     - Impact statement
-     - Evidence excerpt
-
-   7c. **Questioning Quality** — Summary card showing:
-     - Counts: open-ended, closed, engagement prompts, rhetorical
-     - Total count
-     - Up to 5 examples with type labels
-     - Definitive insight paragraph
-
-   7d. **Confusion Moments** — Cards for each cluster:
-     - Timestamp, concept, signal count, risk level badge
-     - Quoted student messages
-     - Teacher response analysis
-     - Risk assessment
-
-   7e. **Teaching Patterns** — Cards for each detected pattern:
-     - Pattern name, occurrence count
-     - Specific details with timestamps
-     - Impact analysis
-     - Actionable recommendation
-
-   7f. **Micro-Moment Highlights** — Two columns:
-     - "Strong Moments" (green) — top 3 with what/why/evidence
-     - "Risk Moments" (red) — top 3 with what/why/evidence
-
-8. **Teacher Communication & Motivational Style Section** — "Teacher Communication & Motivational Style"
+7. **Teacher Communication & Motivational Style Section** — "Teacher Communication & Motivational Style"
    - 5 collapsible subsections:
 
-   8a. **Explanation Effectiveness** — Cards for each teaching block:
+   7a. **Explanation Effectiveness** — Cards for each teaching block:
      - Timestamp, duration, concept
      - Strengths list (techniques detected)
      - Improvements list (coaching advice for missing techniques)
      - Impact prediction linked to activity result
      - Evidence excerpt
 
-   8b. **Encouraging Tone** — Summary card:
+   7b. **Encouraging Tone** — Summary card:
      - Frequency count, duration, tone rating badge
      - Up to 5 timestamped examples
      - Strengths and improvements lists
      - Student impact statement
 
-   8c. **Positive Reinforcement** — Distribution card:
+   7c. **Positive Reinforcement** — Distribution card:
      - 4 category counts (praise, effort, motivation, recovery)
      - Total count
      - Strengths and improvements lists
      - Outcome link statement
 
-   8d. **Communication Style** — Pattern card:
+   7d. **Communication Style** — Pattern card:
      - Style classification badge
      - Strengths description
      - Growth areas
      - Evidence from transcript
 
-   8e. **Communication Effectiveness Score** — Score card:
+   7e. **Communication Effectiveness Score** — Score card:
      - Composite score X/100
      - Rating badge
      - Justification text
      - 4-component breakdown with point values
+
+8. **Deep Transcript Analysis Section** — "Deep Transcript Analysis"
+   - 4 collapsible subsections (each with ChevronRight/ChevronDown toggle):
+
+   8a. **Teaching Clarity & Technique** — Cards for each teaching block:
+     - Timestamp range, duration, topic
+     - Clarity score X/5 with star display
+     - Detected behaviors list (missing behaviors only shown when clarity ≤2 AND activity <60%)
+     - Concise impact statement
+     - Evidence excerpt
+
+   8b. **Questioning & Interaction Quality** — Summary card showing:
+     - Counts: open-ended, closed, engagement prompts, rhetorical
+     - Up to 3 examples with type labels
+     - One concise insight statement
+
+   8c. **Confusion Moments** — Only shown if confusion clusters detected:
+     - Cards for each cluster: timestamp, concept, signal count, risk level badge
+     - Quoted student messages + teacher response (one-line assessment)
+
+   8d. **Key Teaching Patterns** — Only show patterns actually detected (max 3-4):
+     - Pattern name + one-line description
+     - Skip patterns with no data
 
 9. **Additional Observations** — "Additional Observations"
    - Remaining pedagogy feedback items not shown in earlier sections
