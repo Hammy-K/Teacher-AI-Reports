@@ -1,0 +1,105 @@
+## 🔧 ADDITIONAL OVERRIDE — Evidence-Based, Non-Forced Insights + Teacher Accountability Rules
+
+This section OVERRIDES any previous rules that force insights purely from correctness thresholds or time heuristics.
+
+### A) Do NOT force insights (strict rule)
+1) The system MUST NOT generate an insight unless there is clear supporting evidence from at least one of:
+   - transcript text (Arabic excerpts)
+   - chat content (Arabic excerpts)
+   - poll/participation signals (answered rate, skip rate, correctness trends)
+2) If evidence is weak or inconclusive, output:
+   - "No strong signal detected for this area in the data."
+3) Keep insights concise: max 1–2 sentences per insight. No filler, no “because it’s weird” expansion.
+
+### B) Remove fixed timing prescriptions (standardize)
+REMOVE any rule like:
+- "<50% correctness => teacher should explain 1–2 minutes"
+- ">70% correctness => 0–30 seconds is enough"
+Timing can be mentioned ONLY if it clearly correlates with an observed problem (e.g., repeated confusion signals, repeated wrong answers, multiple clarification requests) AND the transcript supports it.
+
+### C) Teacher accountability boundaries (CRITICAL)
+The teacher MUST NOT be held accountable for:
+- number of topics covered
+- breadth of curriculum content
+- what content is taught (this is curriculum-driven)
+
+Teacher IS accountable for:
+- clarity of explanation
+- engagement behaviors (prompts, checks for understanding)
+- responsiveness to confusion
+- motivational/encouraging communication
+- facilitating student participation during activities
+
+**All insights must be framed around delivery and interaction, not content scope.**
+Example phrasing:
+✅ "Clarification was missing after confusion signals."
+❌ "Too many topics were covered."
+
+### D) Replace time-only activity transcript analysis with meaningful signals
+For each activity (and for combined Section Checks), generate at most:
+- 0–3 "What Worked"
+- 0–3 "Could Improve"
+
+Signals you MAY use (non-time-based):
+1) Engagement prompts: teacher asks students to respond, explain, vote, or type in chat (evidence: transcript excerpt).
+2) Comprehension checks: teacher asks "did you understand", asks for reasoning, asks for steps (evidence: transcript excerpt).
+3) Responsiveness: teacher addresses confusion or questions seen in chat (evidence: chat + transcript proximity).
+4) Explanation correctness/consistency (delivery-focused): detect contradictions, unclear steps, or mismatched instructions vs the question intent.
+   - Only flag if there is strong transcript evidence (e.g., conflicting stated rule/step or self-correction).
+5) Student participation quality: many skipped answers, low completion, or no chat responses after prompts (data signal).
+6) Reinforcement quality: praise/encouragement used appropriately during struggle moments (evidence: transcript excerpt).
+
+Timing overlap (teacher speaking during activity) should be treated as a *context detail*, not an automatic negative. Only flag if it likely interfered (e.g., students asking confusion questions, high skip rate, repeated wrong answers during the overlap).
+
+### E) Concise insight formatting requirement
+All transcript-derived insights MUST follow this compact structure:
+
+Insight:
+- Category: {Clarity | Engagement | Responsiveness | Motivation | Instruction Consistency}
+- Statement: 1 sentence
+- Evidence: timestamp + short Arabic excerpt (<= 20 words)
+- Linked Signal (optional): {skip rate / completion / correctness / chat confusion count}
+
+If you cannot provide evidence, do not emit the insight.
+
+### F) Teacher Communication section comes BEFORE Deep Transcript Analysis (order change)
+Reorder analysis sections as:
+1) Teacher Communication & Motivational Style Analysis (tone, reinforcement, encouragement)
+2) Deep Transcript Analysis (only if meaningful signals exist; concise)
+
+### G) Rewrite “Deep Transcript Analysis” to be shorter + only meaningful
+Replace the earlier “4.X Transcript Intelligence & Deep Insight Extraction” behavior with this:
+
+#### Deep Transcript Analysis (Concise)
+Generate ONLY these outputs:
+1) Key Strengths (0–3 bullets)
+2) Key Risks (0–3 bullets)
+3) Top Coaching Suggestions (0–3 bullets)
+
+Rules:
+- No topic counting.
+- No long multi-step rubrics.
+- No exhaustive toggles.
+- No “moment” lists unless there is a strong signal.
+- Each bullet must include evidence (timestamp + Arabic excerpt) or be omitted.
+
+### H) JSON Output Update (minimal + clean)
+Add/replace these fields in DashboardData:
+
+teacherCommunicationInsights: {
+  toneSummary: { rating, highlights[], improvements[] }   // each item concise + evidence
+  reinforcementSummary: { rating, highlights[], improvements[] }
+  engagementBehaviorSummary: { promptsSeen, checksForUnderstandingSeen, responsivenessSeen }
+}
+
+deepTranscriptInsights: {
+  strengths: [ { category, statement, timestamp, evidenceText, linkedSignal? } ]
+  risks:      [ { category, statement, timestamp, evidenceText, linkedSignal? } ]
+  coaching:   [ { category, statement, timestamp, evidenceText, linkedSignal? } ]
+}
+
+### I) Quality gate (hard stop)
+Before returning DashboardData:
+- If an insight lacks evidence -> discard it.
+- If insights exceed limits -> truncate to limits.
+- If there are no strong signals -> return empty arrays + “No strong signal detected” summary line for that section.

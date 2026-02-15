@@ -15,11 +15,14 @@ The dashboard is **session-agnostic** — it auto-detects the session ID from CS
   - Per-question teacher explanation details: each question now shows pre-activity teacher explanation time and topic
   - New frontend TeacherCommunicationSection component with 5 collapsible subsections
   - teacherCommunication object added to qaEvaluation API response
-- **2026-02-15**: Refactored analysis system — removed topic-count accountability
+- **2026-02-15**: Evidence-based insight system overhaul
+  - Fixed time thresholds: 70%+ correctness = 0-30s sufficient, 50-69% = 0.5-1 min, <50% = 1-2 min
+  - Cross-activity time distribution analysis: flags when teacher over-invests time on high-correctness activities while under-investing on low-correctness ones
+  - Evidence-based insights only: no forced timing prescriptions, teacher talking during activities only flagged if it interfered (confusion/low scores)
+  - Removed topic names from all criteria comments, verdicts, and insights — framed around delivery quality not content scope
+  - Concise formatting: 1-2 sentence insights, no filler
   - Removed Concept Mastery Map and Micro-Moment Highlights from Deep Transcript Analysis (now 4 dimensions)
-  - Standardized time-based insight thresholds: >70% = 0-30s sufficient, <50% = 1-2 min needed
   - Verdicts are multi-dimensional (interaction quality, confusion signals, engagement beyond just time)
-  - "Don't force insights" rule — only meaningful findings reported, successful activities kept brief
   - Dashboard reordered: Teacher Communication before Deep Transcript Analysis
   - Added null-safety guards to TranscriptAnalysisSection to prevent crashes with stale data
 - **2026-02-12**: Deep Transcript Analysis (4 dimensions)
