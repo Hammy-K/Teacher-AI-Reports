@@ -137,6 +137,56 @@ async function pushSchema() {
       platforms TEXT
     )
   `);
+
+  // Teachers & auth tables
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS teachers (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(255) NOT NULL UNIQUE,
+      name VARCHAR(255) NOT NULL,
+      name_arabic VARCHAR(255),
+      password_hash VARCHAR(255),
+      google_id VARCHAR(255),
+      role VARCHAR(20) NOT NULL DEFAULT 'teacher',
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      is_active BOOLEAN DEFAULT true NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS report_views (
+      id SERIAL PRIMARY KEY,
+      teacher_id INTEGER REFERENCES teachers(id) NOT NULL,
+      course_session_id VARCHAR(255) NOT NULL,
+      viewed_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      duration_seconds INTEGER,
+      user_agent VARCHAR(500),
+      ip_address VARCHAR(45)
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS report_feedback (
+      id SERIAL PRIMARY KEY,
+      teacher_id INTEGER REFERENCES teachers(id) NOT NULL,
+      course_session_id VARCHAR(255) NOT NULL,
+      rating INTEGER NOT NULL,
+      comment TEXT,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS report_feedback_teacher_session_idx
+    ON report_feedback(teacher_id, course_session_id)
+  `);
+
+  // Add teacher_db_id FK to course_sessions if missing
+  await db.execute(sql`
+    ALTER TABLE course_sessions ADD COLUMN IF NOT EXISTS teacher_db_id INTEGER REFERENCES teachers(id)
+  `);
 }
 
 export async function registerRoutes(
