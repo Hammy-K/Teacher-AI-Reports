@@ -28,6 +28,18 @@ interface FeedbackItem {
   segments?: string[];
 }
 
+interface TranscriptEvidence {
+  timestamp: string;
+  text: string;
+}
+
+interface ExplanationQuality {
+  review: string;
+  suggestedApproach: string;
+  whatTeacherSaid: string;
+  conceptAlignment: 'aligned' | 'partial' | 'misaligned' | 'no_explanation';
+}
+
 interface QuestionAnalysis {
   questionId: string;
   questionText: string;
@@ -39,6 +51,16 @@ interface QuestionAnalysis {
   teacherExplanationMin?: number;
   teacherExplanationTopic?: string;
   teacherExplanationVerdict?: string;
+  transcriptEvidence?: TranscriptEvidence[];
+  pedagogicalAnalysis?: {
+    clarityScore: number;
+    techniques: string[];
+    missingTechniques: string[];
+    communicationTone?: string;
+  };
+  explanationQuality?: ExplanationQuality;
+  confusionMoments?: { timestamp: string; messages: string[] }[];
+  transcriptDuringActivity?: TranscriptEvidence[];
 }
 
 interface CombinedAnalysis {
@@ -156,6 +178,24 @@ interface DashboardData {
       confusionExamples: string[];
       insights: string[];
     }[];
+    executiveSummary?: {
+      overallScore: number;
+      overallVerdict: string;
+      strengths: { text: string; evidence?: string }[];
+      concerns: { text: string; evidence?: string }[];
+      strongCriteria: string[];
+      weakCriteria: string[];
+      keyMetrics: {
+        totalStudents: number;
+        totalQuestions: number;
+        overallCorrectness: number;
+        responseRate: number;
+        sessionTemperature: number;
+        teacherTalkMin: number;
+        studentActivePercent: number;
+        activitiesCompleted: string;
+      };
+    };
     transcriptAnalysis?: {
       teachingClarity: {
         timestamp: string;
@@ -242,6 +282,25 @@ interface DashboardData {
         };
       };
     };
+    correctnessDistribution?: {
+      below40: { count: number; avgPostExplanationMin: number };
+      between40and70: { count: number; avgPostExplanationMin: number };
+      above70: { count: number; avgPostExplanationMin: number };
+      total: number;
+    };
+    instructionalTimeAnalysis?: {
+      sessionDurationMin: number;
+      teacherTalkMin: number;
+      teacherTalkPercent: number;
+      studentActivityMin: number;
+      studentActivityPercent: number;
+    };
+    positiveTeachingMoments?: {
+      type: string;
+      description: string;
+      timestamp: string;
+      quote?: string;
+    }[];
     summary: {
       totalStudents: number;
       totalQuestions: number;
@@ -290,6 +349,99 @@ function ScoreBadge({ score }: { score: number }) {
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${color}`} data-testid="score-badge">
       {label}
     </span>
+  );
+}
+
+function ExecutiveSummarySection({ summary }: { summary: NonNullable<DashboardData["qaEvaluation"]["executiveSummary"]> }) {
+  const verdictColor = summary.overallScore >= 4
+    ? "text-emerald-700 dark:text-emerald-400"
+    : summary.overallScore >= 3
+    ? "text-amber-700 dark:text-amber-400"
+    : "text-red-700 dark:text-red-400";
+
+  return (
+    <div className="space-y-3" data-testid="section-executive-summary">
+      <SectionHeading
+        icon={<Sparkles className="h-4 w-4" />}
+        title="Executive Summary"
+        badge={`${summary.overallScore}/5`}
+        testId="heading-executive-summary"
+      />
+      <Card data-testid="card-executive-summary">
+        <CardContent className="pt-6 space-y-5">
+          <div className="flex items-center gap-3">
+            <ScoreStars score={summary.overallScore} />
+            <span className={`text-sm font-semibold ${verdictColor}`}>{summary.overallVerdict}</span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="text-center p-2 rounded-md bg-muted/50 dark:bg-muted/20">
+              <p className="text-lg font-bold tabular-nums" data-testid="metric-students">{summary.keyMetrics.totalStudents}</p>
+              <p className="text-xs text-muted-foreground">Students</p>
+            </div>
+            <div className="text-center p-2 rounded-md bg-muted/50 dark:bg-muted/20">
+              <p className="text-lg font-bold tabular-nums" data-testid="metric-correctness">{summary.keyMetrics.overallCorrectness}%</p>
+              <p className="text-xs text-muted-foreground">Correctness</p>
+            </div>
+            <div className="text-center p-2 rounded-md bg-muted/50 dark:bg-muted/20">
+              <p className="text-lg font-bold tabular-nums" data-testid="metric-teacher-talk">{summary.keyMetrics.teacherTalkMin}m</p>
+              <p className="text-xs text-muted-foreground">Teacher Talk</p>
+            </div>
+            <div className="text-center p-2 rounded-md bg-muted/50 dark:bg-muted/20">
+              <p className="text-lg font-bold tabular-nums" data-testid="metric-activities">{summary.keyMetrics.activitiesCompleted}</p>
+              <p className="text-xs text-muted-foreground">Activities</p>
+            </div>
+          </div>
+
+          {summary.strengths.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                <ThumbsUp className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" /> Strengths
+              </p>
+              <ul className="space-y-1.5">
+                {summary.strengths.map((s, i) => (
+                  <li key={i} className="text-sm" data-testid={`strength-${i}`}>
+                    <span>{s.text}</span>
+                    {s.evidence && (
+                      <span className="block text-xs text-muted-foreground mt-0.5 pl-3 border-l-2 border-emerald-200 dark:border-emerald-800">{s.evidence}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {summary.concerns.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" /> Concerns
+              </p>
+              <ul className="space-y-1.5">
+                {summary.concerns.map((c, i) => (
+                  <li key={i} className="text-sm" data-testid={`concern-${i}`}>
+                    <span>{c.text}</span>
+                    {c.evidence && (
+                      <span className="block text-xs text-muted-foreground mt-0.5 pl-3 border-l-2 border-amber-200 dark:border-amber-800">{c.evidence}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {(summary.strongCriteria.length > 0 || summary.weakCriteria.length > 0) && (
+            <div className="flex flex-wrap gap-1.5 pt-1 border-t">
+              {summary.strongCriteria.map((c, i) => (
+                <Badge key={`s-${i}`} className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 no-default-hover-elevate no-default-active-elevate">{c}</Badge>
+              ))}
+              {summary.weakCriteria.map((c, i) => (
+                <Badge key={`w-${i}`} className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 no-default-hover-elevate no-default-active-elevate">{c}</Badge>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -463,199 +615,6 @@ function QAEvaluationSection({ evaluation }: { evaluation: DashboardData["qaEval
   );
 }
 
-function TranscriptAnalysisSection({ analysis }: { analysis: NonNullable<DashboardData["qaEvaluation"]["transcriptAnalysis"]> }) {
-  const [expandedSection, setExpandedSection] = useState<string | null>(null);
-
-  const clarityColor = (score: number) => {
-    if (score >= 4) return "text-emerald-600 dark:text-emerald-400";
-    if (score >= 2) return "text-amber-600 dark:text-amber-400";
-    return "text-red-600 dark:text-red-400";
-  };
-
-  const riskColor = (level: string) => {
-    if (level === "High") return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
-    return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400";
-  };
-
-  const allSections = [
-    { id: "clarity", icon: <Eye className="h-4 w-4" />, title: "Teaching Clarity & Technique", count: (analysis.teachingClarity || []).length },
-    { id: "questioning", icon: <HelpCircle className="h-4 w-4" />, title: "Questioning & Interaction Quality", count: analysis.questioningAnalysis?.total || 0 },
-    { id: "confusion", icon: <AlertTriangle className="h-4 w-4" />, title: "Confusion Moments", count: (analysis.confusionMoments || []).length, hideIfEmpty: true },
-    { id: "patterns", icon: <TrendingUp className="h-4 w-4" />, title: "Key Teaching Patterns", count: (analysis.teachingPatterns || []).length, hideIfEmpty: true },
-  ];
-
-  const sections = allSections.filter(s => !s.hideIfEmpty || s.count > 0);
-
-  return (
-    <Card data-testid="card-transcript-analysis">
-      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <Search className="h-4 w-4" />
-          Deep Transcript Analysis
-        </CardTitle>
-        <Badge variant="secondary" data-testid="badge-analysis-dimensions">{sections.length} Dimensions</Badge>
-      </CardHeader>
-      <CardContent className="space-y-1">
-        {sections.map((sec) => (
-          <Collapsible
-            key={sec.id}
-            open={expandedSection === sec.id}
-            onOpenChange={(open) => setExpandedSection(open ? sec.id : null)}
-          >
-            <CollapsibleTrigger
-              className="flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-md hover-elevate"
-              data-testid={`transcript-section-${sec.id}`}
-            >
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                {expandedSection === sec.id ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
-                {sec.icon}
-                <span className="text-sm font-medium">{sec.title}</span>
-              </div>
-              <Badge variant="secondary">{sec.count}</Badge>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="ml-9 mr-3 mb-3 mt-1 space-y-3">
-
-                {sec.id === "clarity" && (
-                  <div className="space-y-2" data-testid="analysis-teaching-clarity">
-                    {(analysis.teachingClarity || []).map((block, idx) => (
-                      <div key={idx} className="rounded-md border p-3 space-y-2" data-testid={`clarity-${idx}`}>
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">{block.timestamp}</span>
-                            <span className="text-sm font-medium">{block.concept}</span>
-                            <Badge variant="secondary">{block.durationMin} min</Badge>
-                          </div>
-                          <span className={`text-sm font-bold tabular-nums ${clarityColor(block.clarityScore)}`}>
-                            {block.clarityScore}/5
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {block.behaviors.map((b, i) => (
-                            <span key={i} className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${b.includes("No ") ? "bg-red-100/60 text-red-700 dark:bg-red-900/20 dark:text-red-400" : "bg-emerald-100/60 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400"}`}>
-                              {b.includes("No ") ? <TrendingDown className="h-3 w-3 mr-1" /> : <CheckCircle className="h-3 w-3 mr-1" />}
-                              {b}
-                            </span>
-                          ))}
-                        </div>
-                        <p className="text-xs">{block.impact}</p>
-                        <div className="text-xs bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-2" dir="rtl">
-                          <Quote className="h-3 w-3 inline mr-1" />{block.evidence}
-                        </div>
-                      </div>
-                    ))}
-                    {analysis.teachingClarity.length === 0 && (
-                      <p className="text-xs text-muted-foreground px-3 py-2">No continuous teaching blocks detected.</p>
-                    )}
-                  </div>
-                )}
-
-                {sec.id === "questioning" && (
-                  <div className="space-y-3" data-testid="analysis-questioning">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                      <div className="rounded-md border px-3 py-2 text-center">
-                        <p className="text-lg font-bold tabular-nums">{analysis.questioningAnalysis.openEnded}</p>
-                        <p className="text-xs text-muted-foreground">Open-ended</p>
-                      </div>
-                      <div className="rounded-md border px-3 py-2 text-center">
-                        <p className="text-lg font-bold tabular-nums">{analysis.questioningAnalysis.closed}</p>
-                        <p className="text-xs text-muted-foreground">Closed</p>
-                      </div>
-                      <div className="rounded-md border px-3 py-2 text-center">
-                        <p className="text-lg font-bold tabular-nums">{analysis.questioningAnalysis.prompts}</p>
-                        <p className="text-xs text-muted-foreground">Engagement Prompts</p>
-                      </div>
-                      <div className="rounded-md border px-3 py-2 text-center">
-                        <p className="text-lg font-bold tabular-nums">{analysis.questioningAnalysis.rhetorical}</p>
-                        <p className="text-xs text-muted-foreground">Rhetorical</p>
-                      </div>
-                    </div>
-                    <p className="text-xs">{analysis.questioningAnalysis.insight}</p>
-                    {analysis.questioningAnalysis.examples.length > 0 && (
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Examples</p>
-                        {analysis.questioningAnalysis.examples.map((ex, i) => (
-                          <div key={i} className="flex items-start gap-2 text-xs bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-2">
-                            <Badge variant="secondary" className="flex-shrink-0">{ex.type}</Badge>
-                            <span dir="rtl">{ex.text}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {sec.id === "confusion" && (
-                  <div className="space-y-2" data-testid="analysis-confusion">
-                    {(analysis.confusionMoments || []).map((cm, idx) => (
-                      <div key={idx} className="rounded-md border p-3 space-y-2" data-testid={`confusion-${idx}`}>
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">{cm.timestamp}</span>
-                            <span className="text-sm font-medium">{cm.concept}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary">{cm.signalCount} signals</Badge>
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${riskColor(cm.riskLevel)}`}>
-                              {cm.riskLevel} Risk
-                            </span>
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          {cm.messages.map((msg, i) => (
-                            <p key={i} className="text-xs bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-1.5" dir="rtl">
-                              {msg}
-                            </p>
-                          ))}
-                        </div>
-                        <div className={`flex items-start gap-2 text-xs rounded-md px-2.5 py-2 ${cm.teacherResponse.includes("clarification") ? "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400" : "bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400"}`}>
-                          <ArrowRight className="h-3 w-3 flex-shrink-0 mt-0.5" />
-                          <span>{cm.teacherResponse}</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">{cm.riskAssessment}</p>
-                      </div>
-                    ))}
-                    {analysis.confusionMoments.length === 0 && (
-                      <p className="text-xs text-muted-foreground px-3 py-2">No confusion clusters detected in student chat.</p>
-                    )}
-                  </div>
-                )}
-
-                {sec.id === "patterns" && (
-                  <div className="space-y-2" data-testid="analysis-patterns">
-                    {(analysis.teachingPatterns || []).map((pat, idx) => (
-                      <div key={idx} className="rounded-md border p-3 space-y-2" data-testid={`pattern-${idx}`}>
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <span className="text-sm font-medium">{pat.pattern}</span>
-                          <Badge variant="secondary">{pat.occurrences}x</Badge>
-                        </div>
-                        <p className="text-xs">{pat.impact}</p>
-                        <div className="space-y-1">
-                          {pat.details.map((d, i) => (
-                            <p key={i} className="text-xs bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-1.5">{d}</p>
-                          ))}
-                        </div>
-                        <div className="flex items-start gap-2 text-xs text-primary">
-                          <ArrowRight className="h-3 w-3 flex-shrink-0 mt-0.5" />
-                          <span>{pat.recommendation}</span>
-                        </div>
-                      </div>
-                    ))}
-                    {analysis.teachingPatterns.length === 0 && (
-                      <p className="text-xs text-muted-foreground px-3 py-2">No recurring teaching patterns detected.</p>
-                    )}
-                  </div>
-                )}
-
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
 function CorrectnessBar({ percent }: { percent: number }) {
   const color = percent >= 75 ? "bg-emerald-500 dark:bg-emerald-400"
     : percent >= 50 ? "bg-amber-500 dark:bg-amber-400"
@@ -703,26 +662,42 @@ function InsightsList({ insights, prefix }: { insights: string[]; prefix: string
   );
 }
 
+function AlignmentIndicator({ alignment }: { alignment: string }) {
+  const config: Record<string, { label: string; color: string }> = {
+    aligned: { label: 'Aligned', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    partial: { label: 'Partially Aligned', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' },
+    misaligned: { label: 'Misaligned', color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' },
+    no_explanation: { label: 'No Explanation', color: 'bg-muted text-muted-foreground' },
+  };
+  const c = config[alignment] || config.no_explanation;
+  return <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${c.color}`} data-testid="alignment-indicator">{c.label}</span>;
+}
+
 function QuestionBreakdown({ questions, prefix }: { questions: QuestionAnalysis[]; prefix: string }) {
-  const [open, setOpen] = useState(false);
   if (questions.length === 0) return null;
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger
-        className="flex items-center gap-2 text-sm font-medium hover-elevate rounded-md px-2 py-1.5"
-        data-testid={`${prefix}-toggle-questions`}
-      >
-        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+    <div className="space-y-2" data-testid={`${prefix}-questions`}>
+      <p className="text-sm font-medium flex items-center gap-1.5">
+        <ListChecks className="h-3.5 w-3.5" />
         Question Breakdown ({questions.length})
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="space-y-2 mt-3">
-          {questions.map((q, qIdx) => (
-            <div key={q.questionId} className="rounded-md border p-3 space-y-2" data-testid={`${prefix}-q-${qIdx}`}>
+      </p>
+      <div className="space-y-3">
+        {questions.map((q, qIdx) => {
+          const eq = q.explanationQuality;
+          const showCoaching = q.percent < 70 && eq;
+
+          return (
+            <div key={q.questionId} className="rounded-md border p-3 space-y-2.5" data-testid={`${prefix}-q-${qIdx}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-start gap-2 min-w-0">
                   <span className="text-xs font-medium text-muted-foreground flex-shrink-0 mt-0.5">Q{qIdx + 1}</span>
-                  <span className="text-sm leading-snug" data-testid={`${prefix}-q-text-${qIdx}`}>{q.questionText}</span>
+                  <span className="text-sm leading-snug" dir="auto" data-testid={`${prefix}-q-text-${qIdx}`}>{q.questionText}</span>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                  {eq && <AlignmentIndicator alignment={eq.conceptAlignment} />}
+                  {q.pedagogicalAnalysis && q.pedagogicalAnalysis.clarityScore > 0 && (
+                    <ScoreStars score={q.pedagogicalAnalysis.clarityScore} />
+                  )}
                 </div>
               </div>
               <CorrectnessBar percent={q.percent} />
@@ -731,22 +706,73 @@ function QuestionBreakdown({ questions, prefix }: { questions: QuestionAnalysis[
                 <span>Correct: {q.correct}/{q.answered}</span>
                 <span>Correctness: {q.percent}%</span>
               </div>
-              {(q.teacherExplanationMin !== undefined && q.teacherExplanationMin > 0) && (
-                <div className="space-y-1.5" data-testid={`${prefix}-q-teach-${qIdx}`}>
-                  <div className="flex items-center gap-2 text-xs font-medium bg-muted/40 dark:bg-muted/20 rounded px-2 py-1.5">
-                    <BookOpen className="h-3 w-3 text-primary flex-shrink-0" />
-                    <span>
-                      Teacher explained{q.teacherExplanationTopic ? ` "${q.teacherExplanationTopic}"` : ''} for <span className="font-semibold">{q.teacherExplanationMin} min</span> before this activity
-                    </span>
-                  </div>
-                  {q.teacherExplanationVerdict && (
-                    <p className="text-xs text-muted-foreground leading-relaxed pl-3 border-l-2 border-primary/20" data-testid={`${prefix}-q-verdict-${qIdx}`}>
-                      {q.teacherExplanationVerdict}
+
+              
+
+              {q.pedagogicalAnalysis && q.pedagogicalAnalysis.techniques.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap" data-testid={`${prefix}-q-techniques-${qIdx}`}>
+                  <span className="text-xs text-muted-foreground">Techniques:</span>
+                  {q.pedagogicalAnalysis.techniques.map((t, tIdx) => (
+                    <Badge key={tIdx} variant="secondary" className="text-xs">{t}</Badge>
+                  ))}
+                </div>
+              )}
+
+              {showCoaching && (
+                <div className="space-y-2 rounded-md bg-muted/30 dark:bg-muted/10 p-2.5" data-testid={`${prefix}-q-coaching-${qIdx}`}>
+                  <p className="text-xs font-medium flex items-center gap-1.5">
+                    <Lightbulb className="h-3.5 w-3.5 text-amber-500" /> Explanation Analysis
+                  </p>
+
+                  {eq.review && (
+                    <p className="text-xs leading-relaxed" data-testid={`${prefix}-q-review-${qIdx}`}>
+                      {eq.review}
                     </p>
+                  )}
+
+                  {eq.whatTeacherSaid && (
+                    <div className="space-y-1" data-testid={`${prefix}-q-said-${qIdx}`}>
+                      <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                        <Mic className="h-3 w-3" /> What the teacher said
+                      </p>
+                      <p className="text-xs text-muted-foreground pl-3 border-l-2 border-blue-200 dark:border-blue-800 leading-relaxed" dir="auto">
+                        {eq.whatTeacherSaid}
+                      </p>
+                    </div>
+                  )}
+
+                  {eq.suggestedApproach && (
+                    <div className="space-y-1" data-testid={`${prefix}-q-suggested-${qIdx}`}>
+                      <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                        <GraduationCap className="h-3 w-3" /> How to explain this effectively
+                      </p>
+                      <p className="text-xs leading-relaxed bg-emerald-50/50 dark:bg-emerald-950/20 rounded px-2.5 py-2">
+                        {eq.suggestedApproach}
+                      </p>
+                    </div>
                   )}
                 </div>
               )}
-              {q.insights.length > 0 && (
+
+              {q.confusionMoments && (() => {
+                const cm = q.confusionMoments as any;
+                const isObj = cm && typeof cm === 'object' && !Array.isArray(cm);
+                const confused = isObj ? cm.confused : (Array.isArray(cm) && cm.length > 0);
+                const examples: string[] = isObj ? (cm.examples || []) : (Array.isArray(cm) ? cm.flatMap((c: any) => c.messages || []) : []);
+                if (!confused || examples.length === 0) return null;
+                return (
+                  <div className="space-y-1 pt-1 bg-red-50/50 dark:bg-red-950/20 rounded p-2" data-testid={`${prefix}-q-confusion-${qIdx}`}>
+                    <p className="text-xs font-medium text-red-600 dark:text-red-400 flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" /> Confusion Detected
+                    </p>
+                    {examples.slice(0, 2).map((msg: string, mIdx: number) => (
+                      <p key={mIdx} className="text-xs text-muted-foreground pl-3" dir="auto">{msg}</p>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {q.insights.length > 0 && !showCoaching && (
                 <div className="space-y-1 pt-1">
                   {q.insights.map((ins, insIdx) => (
                     <p key={insIdx} className="text-xs text-muted-foreground pl-3 border-l-2 border-amber-400/30">
@@ -756,10 +782,10 @@ function QuestionBreakdown({ questions, prefix }: { questions: QuestionAnalysis[
                 </div>
               )}
             </div>
-          ))}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -1004,235 +1030,6 @@ function SingleActivityBlock({ instance: inst, prefix }: { instance: ActivityIns
   );
 }
 
-function TeacherCommunicationSection({ comm }: { comm: NonNullable<DashboardData['qaEvaluation']['teacherCommunication']> }) {
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
-  const toggle = (id: string) => setOpenSections(p => ({ ...p, [id]: !p[id] }));
-
-  const ratingColor = (r: string) => {
-    if (r === "Strongly Encouraging" || r === "Excellent Communicator") return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400";
-    if (r === "Moderately Encouraging" || r === "Effective Communicator") return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400";
-    return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
-  };
-
-  const sections = [
-    { id: "explanations", label: "Explanation Effectiveness", icon: <BookOpen className="h-3.5 w-3.5" />, count: comm.explanationReviews.length },
-    { id: "tone", label: "Encouraging Tone", icon: <Heart className="h-3.5 w-3.5" />, count: comm.toneAnalysis.frequency },
-    { id: "reinforcement", label: "Positive Reinforcement", icon: <Award className="h-3.5 w-3.5" />, count: comm.reinforcementAnalysis.totalCount },
-    { id: "patterns", label: "Communication Style", icon: <Volume2 className="h-3.5 w-3.5" />, count: comm.communicationPatterns.length },
-    { id: "score", label: "Communication Score", icon: <Sparkles className="h-3.5 w-3.5" />, count: null },
-  ];
-
-  return (
-    <div className="space-y-3" data-testid="section-teacher-communication">
-      <SectionHeading
-        icon={<Mic className="h-4 w-4" />}
-        title="Teacher Communication & Motivational Style"
-        testId="heading-teacher-communication"
-      />
-      <Card>
-        <CardContent className="pt-6 space-y-1">
-          {sections.map(sec => (
-            <Collapsible key={sec.id} open={openSections[sec.id]} onOpenChange={() => toggle(sec.id)}>
-              <CollapsibleTrigger
-                className="flex items-center justify-between gap-2 w-full text-sm font-medium hover-elevate rounded-md px-3 py-2.5"
-                data-testid={`toggle-comm-${sec.id}`}
-              >
-                <div className="flex items-center gap-2">
-                  {openSections[sec.id] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                  {sec.icon}
-                  <span>{sec.label}</span>
-                </div>
-                {sec.count !== null && <Badge variant="secondary">{sec.count}</Badge>}
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="px-3 pb-3 space-y-3">
-
-                  {sec.id === "explanations" && (
-                    <div className="space-y-2" data-testid="comm-explanations">
-                      {comm.explanationReviews.map((rev, idx) => (
-                        <div key={idx} className="rounded-md border p-3 space-y-2" data-testid={`explanation-review-${idx}`}>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs text-muted-foreground">{rev.timestamp}</span>
-                            <span className="text-sm font-medium">{rev.concept}</span>
-                            <Badge variant="secondary">{rev.durationMin} min</Badge>
-                          </div>
-                          {rev.strengths.length > 0 && (
-                            <div className="space-y-1">
-                              <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1"><ThumbsUp className="h-3 w-3" /> Strengths</p>
-                              {rev.strengths.map((s, i) => (
-                                <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-emerald-400/30">{s}</p>
-                              ))}
-                            </div>
-                          )}
-                          {rev.improvements.length > 0 && (
-                            <div className="space-y-1">
-                              <p className="text-xs font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Improvements</p>
-                              {rev.improvements.map((s, i) => (
-                                <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-amber-400/30">{s}</p>
-                              ))}
-                            </div>
-                          )}
-                          <div className="text-xs bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-2" dir="rtl">
-                            <Quote className="h-3 w-3 inline mr-1" />{rev.evidence}
-                          </div>
-                          <p className="text-xs text-muted-foreground">{rev.impactPrediction}</p>
-                        </div>
-                      ))}
-                      {comm.explanationReviews.length === 0 && (
-                        <p className="text-xs text-muted-foreground px-3 py-2">No explanation segments detected.</p>
-                      )}
-                    </div>
-                  )}
-
-                  {sec.id === "tone" && (
-                    <div className="space-y-3" data-testid="comm-tone">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <div className="rounded-md border px-3 py-2 text-center">
-                          <p className="text-lg font-bold tabular-nums">{comm.toneAnalysis.frequency}</p>
-                          <p className="text-xs text-muted-foreground">Instances</p>
-                        </div>
-                        <div className="rounded-md border px-3 py-2 text-center">
-                          <p className="text-lg font-bold tabular-nums">{comm.toneAnalysis.durationMin} min</p>
-                          <p className="text-xs text-muted-foreground">Duration</p>
-                        </div>
-                        <Badge className={ratingColor(comm.toneAnalysis.rating)}>{comm.toneAnalysis.rating}</Badge>
-                      </div>
-                      {comm.toneAnalysis.strengths.length > 0 && (
-                        <div className="space-y-1">
-                          <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1"><ThumbsUp className="h-3 w-3" /> Strengths</p>
-                          {comm.toneAnalysis.strengths.map((s, i) => (
-                            <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-emerald-400/30">{s}</p>
-                          ))}
-                        </div>
-                      )}
-                      {comm.toneAnalysis.improvements.length > 0 && (
-                        <div className="space-y-1">
-                          <p className="text-xs font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Suggestions</p>
-                          {comm.toneAnalysis.improvements.map((s, i) => (
-                            <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-amber-400/30">{s}</p>
-                          ))}
-                        </div>
-                      )}
-                      {comm.toneAnalysis.examples.length > 0 && (
-                        <div className="space-y-1">
-                          <p className="text-xs font-medium text-muted-foreground">Evidence</p>
-                          {comm.toneAnalysis.examples.map((ex, i) => (
-                            <div key={i} className="text-xs bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-1.5 flex items-start gap-2">
-                              <span className="text-muted-foreground flex-shrink-0">{ex.timestamp}</span>
-                              <span dir="rtl">{ex.text}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      <p className="text-xs text-muted-foreground">{comm.toneAnalysis.studentImpact}</p>
-                    </div>
-                  )}
-
-                  {sec.id === "reinforcement" && (
-                    <div className="space-y-3" data-testid="comm-reinforcement">
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                        <div className="rounded-md border px-3 py-2 text-center">
-                          <p className="text-lg font-bold tabular-nums">{comm.reinforcementAnalysis.distribution.praiseForCorrectness}</p>
-                          <p className="text-xs text-muted-foreground">Praise for Correct</p>
-                        </div>
-                        <div className="rounded-md border px-3 py-2 text-center">
-                          <p className="text-lg font-bold tabular-nums">{comm.reinforcementAnalysis.distribution.effortEncouragement}</p>
-                          <p className="text-xs text-muted-foreground">Effort-based</p>
-                        </div>
-                        <div className="rounded-md border px-3 py-2 text-center">
-                          <p className="text-lg font-bold tabular-nums">{comm.reinforcementAnalysis.distribution.motivationBeforeTasks}</p>
-                          <p className="text-xs text-muted-foreground">Pre-activity</p>
-                        </div>
-                        <div className="rounded-md border px-3 py-2 text-center">
-                          <p className="text-lg font-bold tabular-nums">{comm.reinforcementAnalysis.distribution.recoveryAfterMistakes}</p>
-                          <p className="text-xs text-muted-foreground">Recovery</p>
-                        </div>
-                      </div>
-                      {comm.reinforcementAnalysis.strengths.length > 0 && (
-                        <div className="space-y-1">
-                          <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1"><ThumbsUp className="h-3 w-3" /> Strengths</p>
-                          {comm.reinforcementAnalysis.strengths.map((s, i) => (
-                            <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-emerald-400/30">{s}</p>
-                          ))}
-                        </div>
-                      )}
-                      {comm.reinforcementAnalysis.improvements.length > 0 && (
-                        <div className="space-y-1">
-                          <p className="text-xs font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Suggestions</p>
-                          {comm.reinforcementAnalysis.improvements.map((s, i) => (
-                            <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-amber-400/30">{s}</p>
-                          ))}
-                        </div>
-                      )}
-                      <p className="text-xs text-muted-foreground">{comm.reinforcementAnalysis.outcomeLink}</p>
-                    </div>
-                  )}
-
-                  {sec.id === "patterns" && (
-                    <div className="space-y-2" data-testid="comm-patterns">
-                      {comm.communicationPatterns.map((cp, idx) => (
-                        <div key={idx} className="rounded-md border p-3 space-y-2" data-testid={`comm-pattern-${idx}`}>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Badge variant="secondary">{cp.pattern}</Badge>
-                            <span className="text-xs text-muted-foreground">{cp.occurrences} occurrences</span>
-                          </div>
-                          <div className="space-y-1">
-                            <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1"><ThumbsUp className="h-3 w-3" /> Strengths</p>
-                            <p className="text-xs text-muted-foreground pl-3 border-l-2 border-emerald-400/30">{cp.strengths}</p>
-                          </div>
-                          <div className="space-y-1">
-                            <p className="text-xs font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1"><TrendingUp className="h-3 w-3" /> Growth Opportunities</p>
-                            <p className="text-xs text-muted-foreground pl-3 border-l-2 border-amber-400/30">{cp.growth}</p>
-                          </div>
-                          <div className="text-xs bg-muted/30 dark:bg-muted/10 rounded-md px-2.5 py-2" dir="rtl">
-                            <Quote className="h-3 w-3 inline mr-1" />{cp.evidence}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {sec.id === "score" && (
-                    <div className="space-y-3" data-testid="comm-score">
-                      <div className="flex items-center gap-4 flex-wrap">
-                        <div className="text-center">
-                          <p className="text-3xl font-bold tabular-nums">{comm.communicationScore.score}</p>
-                          <p className="text-xs text-muted-foreground">/100</p>
-                        </div>
-                        <Badge className={ratingColor(comm.communicationScore.rating)}>{comm.communicationScore.rating}</Badge>
-                      </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                        <div className="rounded-md border px-3 py-2 text-center">
-                          <p className="text-lg font-bold tabular-nums">{comm.communicationScore.breakdown.explanationClarity}</p>
-                          <p className="text-xs text-muted-foreground">Clarity /25</p>
-                        </div>
-                        <div className="rounded-md border px-3 py-2 text-center">
-                          <p className="text-lg font-bold tabular-nums">{comm.communicationScore.breakdown.encouragementFrequency}</p>
-                          <p className="text-xs text-muted-foreground">Encourage /25</p>
-                        </div>
-                        <div className="rounded-md border px-3 py-2 text-center">
-                          <p className="text-lg font-bold tabular-nums">{comm.communicationScore.breakdown.reinforcementBalance}</p>
-                          <p className="text-xs text-muted-foreground">Reinforce /25</p>
-                        </div>
-                        <div className="rounded-md border px-3 py-2 text-center">
-                          <p className="text-lg font-bold tabular-nums">{comm.communicationScore.breakdown.engagementCorrelation}</p>
-                          <p className="text-xs text-muted-foreground">Engage /25</p>
-                        </div>
-                      </div>
-                      <p className="text-xs text-muted-foreground">{comm.communicationScore.justification}</p>
-                    </div>
-                  )}
-
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
-          ))}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
 function ActivitySection({ analysis }: { analysis: ActivityAnalysis }) {
   const iconMap: Record<string, React.ReactNode> = {
     SECTION_CHECK: <ListChecks className="h-4 w-4" />,
@@ -1324,8 +1121,198 @@ function PedagogySection({ items, prefix, title, icon }: { items: { wentWell: Fe
   );
 }
 
+<<<<<<< HEAD
+function CorrectnessDistributionTable({ dist }: { dist: NonNullable<DashboardData['qaEvaluation']['correctnessDistribution']> }) {
+  return (
+    <div className="space-y-3" data-testid="section-correctness-distribution">
+      <SectionHeading
+        icon={<Target className="h-4 w-4" />}
+        title="Question Performance Summary"
+        testId="heading-correctness-distribution"
+      />
+      <Card data-testid="card-correctness-distribution">
+        <CardContent className="pt-6">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" data-testid="table-correctness-distribution">
+              <thead>
+                <tr className="border-b">
+                  <th className="pb-3 pl-4 text-left font-medium text-muted-foreground">Correctness Range</th>
+                  <th className="pb-3 pl-4 text-left font-medium text-muted-foreground">Questions</th>
+                  <th className="pb-3 pl-4 text-left font-medium text-muted-foreground">Avg Pre-Explanation Time</th>
+                  <th className="pb-3 text-left font-medium text-muted-foreground">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b" data-testid="row-below40">
+                  <td className="py-3 pl-4 font-medium">Below 40%</td>
+                  <td className="py-3 pl-4 tabular-nums">{dist.below40.count}</td>
+                  <td className="py-3 pl-4 tabular-nums">{dist.below40.avgPostExplanationMin} min</td>
+                  <td className="py-3">
+                    {dist.below40.count > 0 && (
+                      <Badge variant="destructive" className="text-xs">Needs Reteaching</Badge>
+                    )}
+                    {dist.below40.count === 0 && (
+                      <span className="text-xs text-muted-foreground">None</span>
+                    )}
+                  </td>
+                </tr>
+                <tr className="border-b" data-testid="row-40to70">
+                  <td className="py-3 pl-4 font-medium">40% – 70%</td>
+                  <td className="py-3 pl-4 tabular-nums">{dist.between40and70.count}</td>
+                  <td className="py-3 pl-4 tabular-nums">{dist.between40and70.avgPostExplanationMin} min</td>
+                  <td className="py-3">
+                    {dist.between40and70.count > 0 && (
+                      <Badge variant="secondary" className="text-xs">Partial Understanding</Badge>
+                    )}
+                    {dist.between40and70.count === 0 && (
+                      <span className="text-xs text-muted-foreground">None</span>
+                    )}
+                  </td>
+                </tr>
+                <tr data-testid="row-above70">
+                  <td className="py-3 pl-4 font-medium">70%+</td>
+                  <td className="py-3 pl-4 tabular-nums">{dist.above70.count}</td>
+                  <td className="py-3 pl-4 tabular-nums">{dist.above70.avgPostExplanationMin} min</td>
+                  <td className="py-3">
+                    {dist.above70.count > 0 && (
+                      <Badge variant="default" className="text-xs">Well Understood</Badge>
+                    )}
+                    {dist.above70.count === 0 && (
+                      <span className="text-xs text-muted-foreground">None</span>
+                    )}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-muted-foreground mt-3 pl-4">Total: {dist.total} questions</p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function InstructionalTimeSection({ analysis }: { analysis: NonNullable<DashboardData['qaEvaluation']['instructionalTimeAnalysis']> }) {
+  return (
+    <div className="space-y-3" data-testid="section-instructional-time">
+      <SectionHeading
+        icon={<Timer className="h-4 w-4" />}
+        title="Instructional Time Analysis"
+        testId="heading-instructional-time"
+      />
+      <Card data-testid="card-instructional-time">
+        <CardContent className="pt-6">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" data-testid="table-instructional-time">
+              <thead>
+                <tr className="border-b">
+                  <th className="pb-3 pl-4 text-left font-medium text-muted-foreground">Component</th>
+                  <th className="pb-3 pl-4 text-left font-medium text-muted-foreground">Time</th>
+                  <th className="pb-3 text-left font-medium text-muted-foreground">%</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b" data-testid="row-teacher-talk">
+                  <td className="py-3 pl-4 font-medium">Teacher Explanation & Modelling</td>
+                  <td className="py-3 pl-4 tabular-nums">{analysis.teacherTalkMin} min</td>
+                  <td className="py-3 tabular-nums">{analysis.teacherTalkPercent}%</td>
+                </tr>
+                <tr data-testid="row-student-activity">
+                  <td className="py-3 pl-4 font-medium">Student Activity & Response</td>
+                  <td className="py-3 pl-4 tabular-nums">{analysis.studentActivityMin} min</td>
+                  <td className="py-3 tabular-nums">{analysis.studentActivityPercent}%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 h-3 rounded-full overflow-hidden bg-muted flex">
+            <div
+              className="bg-primary/70 dark:bg-primary/50 h-full transition-all"
+              style={{ width: `${analysis.teacherTalkPercent}%` }}
+              data-testid="bar-teacher-talk"
+            />
+            <div
+              className="bg-emerald-500/50 dark:bg-emerald-400/30 h-full transition-all"
+              style={{ width: `${analysis.studentActivityPercent}%` }}
+              data-testid="bar-student-activity"
+            />
+          </div>
+          <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1.5">
+              <div className="h-2.5 w-2.5 rounded-sm bg-primary/70 dark:bg-primary/50" />
+              <span>Teacher</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="h-2.5 w-2.5 rounded-sm bg-emerald-500/50 dark:bg-emerald-400/30" />
+              <span>Student</span>
+            </div>
+            <span className="ml-auto">Session: {analysis.sessionDurationMin} min</span>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function PositiveTeachingMomentsSection({ moments }: { moments: NonNullable<DashboardData['qaEvaluation']['positiveTeachingMoments']> }) {
+  if (moments.length === 0) return null;
+
+  const iconMap: Record<string, typeof Star> = {
+    encouragement: Heart,
+    mic_interaction: Mic,
+    adaptive_teaching: Lightbulb,
+    flexible_method: Sparkles,
+    tech_handling: ShieldCheck,
+    effective_delivery: CheckCircle,
+    pacing_observation: AlertTriangle,
+  };
+
+  return (
+    <div className="space-y-3" data-testid="section-positive-moments">
+      <SectionHeading
+        icon={<Award className="h-4 w-4" />}
+        title="Notable Teaching Moments"
+        testId="heading-positive-moments"
+      />
+      <Card data-testid="card-positive-moments">
+        <CardContent className="pt-6 space-y-3">
+          {moments.map((moment, idx) => {
+            const IconComp = iconMap[moment.type] || Star;
+            const isPacing = moment.type === 'pacing_observation';
+            return (
+              <div
+                key={idx}
+                className={`flex items-start gap-3 rounded-md p-3 ${isPacing ? 'bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/30' : 'bg-muted/30 dark:bg-muted/10'}`}
+                data-testid={`moment-${moment.type}-${idx}`}
+              >
+                <div className={`flex-shrink-0 mt-0.5 ${isPacing ? 'text-amber-500' : 'text-primary'}`}>
+                  <IconComp className="h-4 w-4" />
+                </div>
+                <div className="space-y-1 min-w-0">
+                  <p className="text-sm leading-relaxed">{moment.description}</p>
+                  {moment.quote && (
+                    <p className="text-xs text-muted-foreground pl-3 border-l-2 border-blue-200 dark:border-blue-800 leading-relaxed" dir="auto">
+                      {moment.quote}
+                    </p>
+                  )}
+                  {moment.timestamp && (
+                    <p className="text-[10px] font-mono text-muted-foreground/60">{moment.timestamp}</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export default function Dashboard() {
+=======
 export default function Dashboard(props: { overrideSessionId?: number } & Record<string, any> = {}) {
   const overrideSessionId = props.overrideSessionId;
+>>>>>>> 15c85cab3d45af363dc2f403263cd4cb6630626a
   const { data: sessionInfo } = useQuery<{ sessionId: number | null }>({
     queryKey: ["/api/detected-session"],
     enabled: !overrideSessionId,
@@ -1421,9 +1408,6 @@ export default function Dashboard(props: { overrideSessionId?: number } & Record
   const pedWentWell = feedback.wentWell.filter(i => i.category === "pedagogy" && !i.activityId);
   const pedNeedsImprovement = feedback.needsImprovement.filter(i => i.category === "pedagogy" && !i.activityId);
 
-  const tmCategories = new Set(["time_management", "student_stage"]);
-  const tmWentWell = feedback.wentWell.filter(i => tmCategories.has(i.category) && !analyzedActivityIds.has(i.activityId!));
-  const tmNeedsImprovement = feedback.needsImprovement.filter(i => tmCategories.has(i.category) && !analyzedActivityIds.has(i.activityId!));
 
   return (
     <div className="min-h-screen bg-background" data-testid="dashboard-page">
@@ -1557,29 +1541,28 @@ export default function Dashboard(props: { overrideSessionId?: number } & Record
           </Card>
         </div>
 
+        {qaEvaluation?.correctnessDistribution && (
+          <CorrectnessDistributionTable dist={qaEvaluation.correctnessDistribution} />
+        )}
+
+        {qaEvaluation?.instructionalTimeAnalysis && (
+          <InstructionalTimeSection analysis={qaEvaluation.instructionalTimeAnalysis} />
+        )}
+
+        {qaEvaluation?.executiveSummary && (
+          <ExecutiveSummarySection summary={qaEvaluation.executiveSummary} />
+        )}
+
+        {qaEvaluation?.positiveTeachingMoments && qaEvaluation.positiveTeachingMoments.length > 0 && (
+          <PositiveTeachingMomentsSection moments={qaEvaluation.positiveTeachingMoments} />
+        )}
+
         {activityAnalyses.map((analysis) => (
           <ActivitySection key={analysis.activityType} analysis={analysis} />
         ))}
 
-        {(tmWentWell.length > 0 || tmNeedsImprovement.length > 0) && (
-          <PedagogySection
-            items={{ wentWell: tmWentWell, needsImprovement: tmNeedsImprovement }}
-            prefix="time-management"
-            title="Time Management"
-            icon={<Clock className="h-4 w-4" />}
-          />
-        )}
-
         {qaEvaluation && (
           <QAEvaluationSection evaluation={qaEvaluation} />
-        )}
-
-        {qaEvaluation?.teacherCommunication && (
-          <TeacherCommunicationSection comm={qaEvaluation.teacherCommunication} />
-        )}
-
-        {qaEvaluation?.transcriptAnalysis && (
-          <TranscriptAnalysisSection analysis={qaEvaluation.transcriptAnalysis} />
         )}
 
         <PedagogySection
