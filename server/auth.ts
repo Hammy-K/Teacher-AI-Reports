@@ -1,12 +1,20 @@
 import jwt from "jsonwebtoken";
 import { Request, Response, NextFunction } from "express";
-import { OAuth2Client } from "google-auth-library";
+import admin from "firebase-admin";
 
 const JWT_SECRET = process.env.JWT_SECRET || "fallback-dev-secret";
 const JWT_EXPIRY = "7d";
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 
-const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+// Initialize Firebase Admin with service account credentials
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+    }),
+  });
+}
 
 export interface AuthPayload {
   teacherId: number;
@@ -22,18 +30,14 @@ declare global {
   }
 }
 
-export async function verifyGoogleToken(idToken: string): Promise<{ email: string; name: string; googleId: string } | null> {
+export async function verifyFirebaseToken(idToken: string): Promise<{ email: string; name: string; uid: string } | null> {
   try {
-    const ticket = await googleClient.verifyIdToken({
-      idToken,
-      audience: GOOGLE_CLIENT_ID,
-    });
-    const payload = ticket.getPayload();
-    if (!payload || !payload.email) return null;
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    if (!decoded.email) return null;
     return {
-      email: payload.email,
-      name: payload.name || payload.email,
-      googleId: payload.sub,
+      email: decoded.email,
+      name: decoded.name || decoded.email,
+      uid: decoded.uid,
     };
   } catch {
     return null;

@@ -1,7 +1,6 @@
 import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { GoogleOAuthProvider } from "@react-oauth/google";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/lib/auth";
@@ -11,8 +10,6 @@ import LoginPage from "@/pages/login";
 import TeacherDashboard from "@/pages/teacher-dashboard";
 import TeacherSessionReport from "@/pages/teacher-session-report";
 import AdminDashboard from "@/pages/admin-dashboard";
-
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
 function ProtectedRoute({ component: Component, role, ...rest }: { component: React.ComponentType<any>; role?: "admin" | "teacher"; [key: string]: any }) {
   const { teacher, isLoading } = useAuth();
@@ -29,9 +26,9 @@ function ProtectedRoute({ component: Component, role, ...rest }: { component: Re
     return <Redirect to="/login" />;
   }
 
-  if (role && teacher.role !== role) {
-    // Wrong role — redirect to their correct dashboard
-    return <Redirect to={teacher.role === "admin" ? "/admin" : "/teacher"} />;
+  // Admins can access everything; teachers can only access teacher routes
+  if (role === "admin" && teacher.role !== "admin") {
+    return <Redirect to="/teacher" />;
   }
 
   return <Component {...rest} />;
@@ -66,16 +63,14 @@ function Router() {
 
 function App() {
   return (
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Router />
-          </TooltipProvider>
-        </AuthProvider>
-      </QueryClientProvider>
-    </GoogleOAuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Router />
+        </TooltipProvider>
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }
 

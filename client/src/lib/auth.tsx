@@ -1,5 +1,7 @@
 import React, { createContext, useContext, ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { signInWithPopup, signOut } from "firebase/auth";
+import { auth, googleProvider } from "./firebase";
 import { apiRequest, getQueryFn } from "./queryClient";
 
 interface Teacher {
@@ -13,7 +15,7 @@ interface Teacher {
 interface AuthContextType {
   teacher: Teacher | null;
   isLoading: boolean;
-  loginWithGoogle: (credential: string) => Promise<Teacher>;
+  loginWithGoogle: () => Promise<Teacher>;
   logout: () => Promise<void>;
 }
 
@@ -29,9 +31,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     retry: false,
   });
 
-  const googleLoginMutation = useMutation({
-    mutationFn: async (credential: string) => {
-      const res = await apiRequest("POST", "/api/auth/google", { credential });
+  const firebaseLoginMutation = useMutation({
+    mutationFn: async () => {
+      // Sign in with Google via Firebase popup
+      const result = await signInWithPopup(auth, googleProvider);
+      const idToken = await result.user.getIdToken();
+
+      // Send the Firebase ID token to our backend
+      const res = await apiRequest("POST", "/api/auth/firebase", { idToken });
       const data = await res.json();
       return data.teacher as Teacher;
     },
@@ -42,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
+      await signOut(auth);
       await apiRequest("POST", "/api/auth/logout");
     },
     onSuccess: () => {
@@ -50,8 +58,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
-  const loginWithGoogle = async (credential: string): Promise<Teacher> => {
-    return googleLoginMutation.mutateAsync(credential);
+  const loginWithGoogle = async (): Promise<Teacher> => {
+    return firebaseLoginMutation.mutateAsync();
   };
 
   const logout = async () => {

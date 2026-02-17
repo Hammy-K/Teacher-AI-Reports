@@ -12,7 +12,7 @@ import {
   classroomActivities, userPolls, userReactions, userSessions,
   teachers, reportViews, reportFeedback,
 } from "@shared/schema";
-import { verifyGoogleToken, generateToken, requireAuth, requireAdmin } from "./auth";
+import { verifyFirebaseToken, generateToken, requireAuth, requireAdmin } from "./auth";
 
 async function pushSchema() {
   await db.execute(sql`
@@ -252,23 +252,23 @@ export async function registerRoutes(
 
   // ============ Auth Routes ============
 
-  app.post("/api/auth/google", async (req, res) => {
+  app.post("/api/auth/firebase", async (req, res) => {
     try {
-      const { credential } = req.body;
-      if (!credential) {
-        res.status(400).json({ error: "Google credential is required" });
+      const { idToken } = req.body;
+      if (!idToken) {
+        res.status(400).json({ error: "Firebase ID token is required" });
         return;
       }
 
-      const googleUser = await verifyGoogleToken(credential);
-      if (!googleUser) {
-        res.status(401).json({ error: "Invalid Google token" });
+      const firebaseUser = await verifyFirebaseToken(idToken);
+      if (!firebaseUser) {
+        res.status(401).json({ error: "Invalid Firebase token" });
         return;
       }
 
       // Look up teacher by email — only pre-registered emails allowed
       const [teacher] = await db.select().from(teachers)
-        .where(eq(teachers.email, googleUser.email))
+        .where(eq(teachers.email, firebaseUser.email))
         .limit(1);
 
       if (!teacher) {
@@ -281,10 +281,10 @@ export async function registerRoutes(
         return;
       }
 
-      // Update googleId and name if not set
+      // Update googleId (Firebase UID) if not set
       if (!teacher.googleId) {
         await db.update(teachers)
-          .set({ googleId: googleUser.googleId, updatedAt: new Date() })
+          .set({ googleId: firebaseUser.uid, updatedAt: new Date() })
           .where(eq(teachers.id, teacher.id));
       }
 
@@ -306,7 +306,7 @@ export async function registerRoutes(
         },
       });
     } catch (err: any) {
-      console.error("Google auth error:", err);
+      console.error("Firebase auth error:", err);
       res.status(500).json({ error: "Failed to authenticate" });
     }
   });
