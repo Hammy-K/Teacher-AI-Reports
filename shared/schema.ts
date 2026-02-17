@@ -1,7 +1,46 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, real, boolean, timestamp, jsonb, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, real, boolean, timestamp, jsonb, serial, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// ============ Teachers & Auth ============
+
+export const teachers = pgTable("teachers", {
+  id: serial("id").primaryKey(),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  nameArabic: varchar("name_arabic", { length: 255 }),
+  passwordHash: varchar("password_hash", { length: 255 }),
+  googleId: varchar("google_id", { length: 255 }),
+  role: varchar("role", { length: 20 }).default("teacher").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+});
+
+export const reportViews = pgTable("report_views", {
+  id: serial("id").primaryKey(),
+  teacherId: integer("teacher_id").references(() => teachers.id).notNull(),
+  courseSessionId: varchar("course_session_id", { length: 255 }).notNull(),
+  viewedAt: timestamp("viewed_at").defaultNow().notNull(),
+  durationSeconds: integer("duration_seconds"),
+  userAgent: varchar("user_agent", { length: 500 }),
+  ipAddress: varchar("ip_address", { length: 45 }),
+});
+
+export const reportFeedback = pgTable("report_feedback", {
+  id: serial("id").primaryKey(),
+  teacherId: integer("teacher_id").references(() => teachers.id).notNull(),
+  courseSessionId: varchar("course_session_id", { length: 255 }).notNull(),
+  rating: integer("rating").notNull(),
+  comment: text("comment"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("report_feedback_teacher_session_idx").on(table.teacherId, table.courseSessionId),
+]);
+
+// ============ Session Data ============
 
 export const courseSessions = pgTable("course_sessions", {
   id: serial("id").primaryKey(),
@@ -27,6 +66,7 @@ export const courseSessions = pgTable("course_sessions", {
   negativeUsers: integer("negative_users"),
   neutralUsers: integer("neutral_users"),
   sessionTemperature: real("session_temperature"),
+  teacherDbId: integer("teacher_db_id").references(() => teachers.id),
 });
 
 export const sessionTranscripts = pgTable("session_transcripts", {
@@ -112,6 +152,10 @@ export const userSessions = pgTable("user_sessions", {
   platforms: text("platforms"),
 });
 
+export const insertTeacherSchema = createInsertSchema(teachers).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertReportViewSchema = createInsertSchema(reportViews).omit({ id: true, viewedAt: true });
+export const insertReportFeedbackSchema = createInsertSchema(reportFeedback).omit({ id: true, createdAt: true, updatedAt: true });
+
 export const insertCourseSessionSchema = createInsertSchema(courseSessions).omit({ id: true });
 export const insertSessionTranscriptSchema = createInsertSchema(sessionTranscripts).omit({ id: true });
 export const insertSessionChatSchema = createInsertSchema(sessionChats).omit({ id: true });
@@ -135,3 +179,10 @@ export type InsertClassroomActivity = z.infer<typeof insertClassroomActivitySche
 export type InsertUserPoll = z.infer<typeof insertUserPollSchema>;
 export type InsertUserReaction = z.infer<typeof insertUserReactionSchema>;
 export type InsertUserSession = z.infer<typeof insertUserSessionSchema>;
+
+export type Teacher = typeof teachers.$inferSelect;
+export type InsertTeacher = z.infer<typeof insertTeacherSchema>;
+export type ReportView = typeof reportViews.$inferSelect;
+export type InsertReportView = z.infer<typeof insertReportViewSchema>;
+export type ReportFeedback = typeof reportFeedback.$inferSelect;
+export type InsertReportFeedback = z.infer<typeof insertReportFeedbackSchema>;

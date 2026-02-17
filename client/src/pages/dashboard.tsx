@@ -1324,12 +1324,14 @@ function PedagogySection({ items, prefix, title, icon }: { items: { wentWell: Fe
   );
 }
 
-export default function Dashboard() {
+export default function Dashboard(props: { overrideSessionId?: number } & Record<string, any> = {}) {
+  const overrideSessionId = props.overrideSessionId;
   const { data: sessionInfo } = useQuery<{ sessionId: number | null }>({
     queryKey: ["/api/detected-session"],
+    enabled: !overrideSessionId,
   });
 
-  const sessionId = sessionInfo?.sessionId;
+  const sessionId = overrideSessionId || sessionInfo?.sessionId;
 
   const { data, isLoading, error } = useQuery<DashboardData>({
     queryKey: ["/api/dashboard", sessionId],

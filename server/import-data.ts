@@ -306,3 +306,208 @@ export async function importAllData() {
 export function getDetectedSessionId(): number | null {
   return detectSessionId();
 }
+
+/**
+ * Import a session from uploaded files. Detects session ID from filenames,
+ * parses all CSVs, and inserts into the database.
+ * Optionally links the session to an authenticated teacher via teacherDbId.
+ */
+export async function importSessionFromFiles(
+  files: { originalname: string; path: string }[],
+  teacherDbId?: number
+): Promise<{ sessionId: number; success: boolean; error?: string }> {
+  // Detect session ID from uploaded filenames
+  let sessionId: number | null = null;
+  for (const f of files) {
+    const match = f.originalname.match(/(?:course_[Ss]ession|chats|classroom_activity|f_user_poll|f_user_reaction|user_session|namra_transcript)_(\d+)_/i);
+    if (match) {
+      sessionId = parseInt(match[1], 10);
+      break;
+    }
+  }
+  if (!sessionId) {
+    return { sessionId: 0, success: false, error: "Could not detect session ID from filenames" };
+  }
+
+  // Check if session already imported
+  const { db } = await import("./db");
+  const { courseSessions } = await import("@shared/schema");
+  const { eq } = await import("drizzle-orm");
+  const existing = await db.select().from(courseSessions)
+    .where(eq(courseSessions.courseSessionId, sessionId)).limit(1);
+  if (existing.length > 0) {
+    return { sessionId, success: false, error: `Session ${sessionId} already exists` };
+  }
+
+  // Build a map of file type -> temp path
+  const fileMap: Record<string, string> = {};
+  for (const f of files) {
+    const name = f.originalname.toLowerCase();
+    if (name.startsWith("course_session") || name.startsWith("course_s")) fileMap.courseSession = f.path;
+    else if (name.startsWith("namra_transcript") || name.startsWith("transcript")) fileMap.transcript = f.path;
+    else if (name.startsWith("chat")) fileMap.chats = f.path;
+    else if (name.startsWith("classroom_activity")) fileMap.classroomActivity = f.path;
+    else if (name.startsWith("f_user_poll") || name.startsWith("user_poll")) fileMap.userPoll = f.path;
+    else if (name.startsWith("f_user_reaction") || name.startsWith("user_reaction")) fileMap.userReaction = f.path;
+    else if (name.startsWith("user_session")) fileMap.userSession = f.path;
+  }
+
+  // Helper to read CSV from absolute path
+  function readCsvFromPath(filePath: string): any[] {
+    const content = fs.readFileSync(filePath, "utf-8");
+    const rows = parse(content, { columns: true, skip_empty_lines: true, relax_column_count: true });
+    return rows.map(fixRowEncoding);
+  }
+
+  try {
+    if (fileMap.courseSession) {
+      const rows = readCsvFromPath(fileMap.courseSession);
+      for (const row of rows) {
+        const data: InsertCourseSession = {
+          courseSessionId: safeInt(row.course_session_id) || sessionId,
+          courseId: safeInt(row.course_id),
+          courseSessionName: row.course_session_name || null,
+          courseSessionClassType: row.course_session_class_type || null,
+          courseSessionType: row.course_session_type || null,
+          teacherId: safeInt(row.teacher_id),
+          scheduledStartTime: row.course_session_scheduled_start_time || row.scheduled_start_time || null,
+          scheduledEndTime: row.course_session_scheduled_end_time || row.scheduled_end_time || null,
+          teacherStartTime: row.teacher_start_time || null,
+          teacherEndTime: row.teacher_end_time || null,
+          teachingTime: safeFloat(row.teaching_time),
+          sessionTime: safeFloat(row.session_time),
+          avgActiveTimePerStudent: safeFloat(row.avg_active_time_per_student),
+          medianActiveTimePerStudent: safeFloat(row.median_active_time_per_student),
+          courseSessionStatus: row.course_session_status || null,
+          totalSegments: safeInt(row.total_segments),
+          engagementEvents: row.engagement_events ? JSON.parse(row.engagement_events.replace(/'/g, '"')) : null,
+          engagementDurations: row.engagement_durations ? JSON.parse(row.engagement_durations.replace(/'/g, '"')) : null,
+          positiveUsers: safeInt(row.positive_users),
+          negativeUsers: safeInt(row.negative_users),
+          neutralUsers: safeInt(row.neutral_users),
+          sessionTemperature: safeFloat(row.session_temperature),
+          teacherDbId: teacherDbId || null,
+        };
+        await storage.insertCourseSession(data);
+      }
+    }
+
+    if (fileMap.transcript) {
+      let content = fs.readFileSync(fileMap.transcript, "utf-8");
+      if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
+      const parsed = parse(content, { columns: false, skip_empty_lines: true, relax_column_count: true });
+      const transcripts: InsertSessionTranscript[] = parsed.map((cols: string[], i: number) => ({
+        courseSessionId: sessionId!,
+        startTime: (cols[0] || '').trim(),
+        endTime: (cols[1] || '').trim(),
+        text: (cols.slice(2).join(',') || '').trim(),
+        lineOrder: i + 1,
+      }));
+      await storage.insertTranscripts(transcripts);
+    }
+
+    if (fileMap.chats) {
+      const rows = readCsvFromPath(fileMap.chats);
+      const chats: InsertSessionChat[] = rows.map((row: any) => ({
+        courseSessionId: safeInt(row.course_session_id) || sessionId!,
+        messageId: row.message_id || null,
+        messageText: row.message_text || null,
+        creatorId: safeInt(row.creator_id),
+        userType: row.user_type || null,
+        creatorName: row.creator_name || null,
+        createdAtTs: row.created_at_ts || null,
+      }));
+      await storage.insertChats(chats);
+    }
+
+    if (fileMap.classroomActivity) {
+      const rows = readCsvFromPath(fileMap.classroomActivity);
+      const activities: InsertClassroomActivity[] = rows.map((row: any) => ({
+        activityId: safeInt(row.activity_id) || 0,
+        courseSessionId: safeInt(row.course_session_id) || sessionId!,
+        activityType: row.type || row.activity_type || null,
+        startTime: row.start_time || null,
+        endTime: row.end_time || null,
+        activityHappened: safeBool(row.activity_happened),
+        plannedDuration: safeInt(row.planned_duration),
+        duration: safeFloat(row.duration),
+        totalMcqs: safeInt(row.total_mcqs),
+      }));
+      await storage.insertActivities(activities);
+    }
+
+    if (fileMap.userPoll) {
+      const rows = readCsvFromPath(fileMap.userPoll);
+      const polls: InsertUserPoll[] = rows.map((row: any) => ({
+        attemptId: row.attempt_id || null,
+        pollType: row.poll_type || null,
+        pollType2: row.poll_type_2 || null,
+        courseSessionId: safeInt(row.course_session_id) || sessionId!,
+        userId: safeInt(row.user_id),
+        questionId: safeInt(row.question_id),
+        questionText: row.question_text || null,
+        classroomActivityId: safeInt(row.classroom_activity_id),
+        isCorrectAnswer: safeBool(row.is_correct_answer),
+        pollAnswered: safeBool(row.poll_answered),
+        pollSeen: safeBool(row.poll_seen),
+        pollDuration: safeInt(row.poll_duration),
+        pollStartTime: row.poll_start_time || null,
+        pollEndTime: row.poll_end_time || null,
+      }));
+      await storage.insertPolls(polls);
+    }
+
+    if (fileMap.userReaction) {
+      const rows = readCsvFromPath(fileMap.userReaction);
+      const reactions: InsertUserReaction[] = rows.map((row: any) => ({
+        courseSessionId: safeInt(row.course_session_id) || sessionId!,
+        userId: safeInt(row.user_id),
+        eventDatetime: row.event_datetime || null,
+        emotion: row.emotion || null,
+        partOfActivity: safeBool(row.part_of_activity),
+        totalReactions: safeInt(row.total_reactions),
+      }));
+      await storage.insertReactions(reactions);
+    }
+
+    if (fileMap.userSession) {
+      const rows = readCsvFromPath(fileMap.userSession);
+      const userSessionData: InsertUserSession[] = rows.map((row: any) => ({
+        userId: safeInt(row.user_id) || 0,
+        userName: row.user_name || null,
+        userType: row.user_type || null,
+        userSentiment: row.user_sentiment || null,
+        courseSessionId: safeInt(row.course_session_id) || sessionId!,
+        teachingTime: safeFloat(row.teaching_time),
+        sessionTime: safeFloat(row.session_time),
+        userEnterTime: row.user_enter_time || null,
+        userExitTime: row.user_exit_time || null,
+        roomTime: safeFloat(row.room_time),
+        learningTime: safeFloat(row.learning_time),
+        activeTime: safeFloat(row.active_time),
+        totalPollsSeen: safeInt(row.total_polls_seen),
+        totalPollsResponded: safeInt(row.total_polls_responded),
+        totalMessages: safeInt(row.total_messages),
+        totalHandRaise: safeInt(row.total_hand_raise),
+        totalUnmutes: safeInt(row.total_unmutes),
+        platforms: row.platforms || null,
+      }));
+      await storage.insertUserSessions(userSessionData);
+    }
+
+    // Clean up temp files
+    for (const f of files) {
+      try { fs.unlinkSync(f.path); } catch {}
+    }
+
+    console.log(`Successfully imported session ${sessionId} (${Object.keys(fileMap).length} file types)`);
+    return { sessionId, success: true };
+  } catch (err: any) {
+    // Clean up temp files on error
+    for (const f of files) {
+      try { fs.unlinkSync(f.path); } catch {}
+    }
+    console.error(`Failed to import session ${sessionId}:`, err);
+    return { sessionId, success: false, error: err.message };
+  }
+}

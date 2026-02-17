@@ -32,37 +32,82 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  async isDataImported(): Promise<boolean> {
-    const result = await db.select({ count: count() }).from(courseSessions);
-    return (result[0]?.count ?? 0) > 0;
+
+  // --- Shared constants ---
+
+  private static readonly CONFUSION_PATTERN = /ما\s*فهم|مو\s*فاهم|مو\s*واضح|ما\s*عرف|صعب|ما\s*فهمت|مش\s*فاهم|كيف|وش\s*يعني|يعني\s*ايش|ما\s*وضح|\?\?|اعيد|ما\s*قدر/i;
+
+  private static readonly TOPIC_MAP: [RegExp, string][] = [
+    [/الدائر[ةه]/i, "Circles"],
+    [/المستقيم|مستقيمات/i, "Lines in circles"],
+    [/نصف القطر|أنصاف.*القطر/i, "Radius"],
+    [/القطر/i, "Diameter"],
+    [/الوتر|وتر/i, "Chord"],
+    [/مماس|التماس/i, "Tangent"],
+    [/الزاوي[ةه]\s*المركزي[ةه]/i, "Central angles"],
+    [/الزاوي[ةه]\s*المحيطي[ةه]/i, "Inscribed angles"],
+    [/الزوايا|زاوي[ةه]/i, "Angles"],
+    [/المحيط/i, "Perimeter"],
+    [/المساح[ةه]/i, "Area"],
+    [/المضلع|مضلعات|رباعي/i, "Polygons"],
+    [/القوس/i, "Arc"],
+    [/طاء.*نق|نق\s*تربيع/i, "Circle formulas"],
+    [/مربع|مثلث|سداسي/i, "Shapes in circles"],
+  ];
+
+  private static readonly TYPE_NAME_EN: Record<string, string> = {
+    SECTION_CHECK: "Section Check",
+    EXIT_TICKET: "Exit Ticket",
+    TEAM_EXERCISE: "Team Exercise",
+  };
+
+  // --- Shared helpers ---
+
+  private formatTime(sec: number): string {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
-  async getSessionOverview(): Promise<any> {
-    const sessions = await db.select().from(courseSessions).limit(1);
-    return sessions[0] || null;
+  private buildContinuousBlocks(
+    sorted: { startSec: number; endSec: number; text: string }[],
+    gapThresholdSec: number,
+    minDurationSec: number = 0
+  ): { startSec: number; endSec: number; texts: string[] }[] {
+    if (sorted.length === 0) return [];
+    const blocks: { startSec: number; endSec: number; texts: string[] }[] = [];
+    let blockStart = sorted[0].startSec;
+    let blockEnd = sorted[0].endSec;
+    let blockTexts = [sorted[0].text];
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i].startSec - blockEnd <= gapThresholdSec) {
+        blockEnd = Math.max(blockEnd, sorted[i].endSec);
+        blockTexts.push(sorted[i].text);
+      } else {
+        if (blockEnd - blockStart >= minDurationSec) {
+          blocks.push({ startSec: blockStart, endSec: blockEnd, texts: blockTexts });
+        }
+        blockStart = sorted[i].startSec;
+        blockEnd = sorted[i].endSec;
+        blockTexts = [sorted[i].text];
+      }
+    }
+    if (blockEnd - blockStart >= minDurationSec) {
+      blocks.push({ startSec: blockStart, endSec: blockEnd, texts: blockTexts });
+    }
+    return blocks;
   }
 
-  async getTranscripts(courseSessionId: number): Promise<SessionTranscript[]> {
-    return db.select().from(sessionTranscripts)
-      .where(eq(sessionTranscripts.courseSessionId, courseSessionId))
-      .orderBy(asc(sessionTranscripts.lineOrder));
+  private validateCourseSessionId(courseSessionId: number): void {
+    if (!Number.isInteger(courseSessionId) || courseSessionId <= 0) {
+      throw new Error(`Invalid courseSessionId: ${courseSessionId}`);
+    }
   }
 
-  async getChats(courseSessionId: number): Promise<SessionChat[]> {
-    return db.select().from(sessionChats)
-      .where(eq(sessionChats.courseSessionId, courseSessionId))
-      .orderBy(asc(sessionChats.createdAtTs));
-  }
+  // --- Compute methods (extracted for reuse without redundant DB queries) ---
 
-  async getActivities(courseSessionId: number): Promise<ClassroomActivity[]> {
-    return db.select().from(classroomActivities)
-      .where(eq(classroomActivities.courseSessionId, courseSessionId));
-  }
-
-  async getPollStats(courseSessionId: number): Promise<any> {
-    const polls = await db.select().from(userPolls)
-      .where(eq(userPolls.courseSessionId, courseSessionId));
-
+  private computePollStats(polls: UserPoll[]): any {
     const answered = polls.filter(p => p.pollAnswered);
     const correct = answered.filter(p => p.isCorrectAnswer);
     const totalAnswered = answered.length;
@@ -95,10 +140,7 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getReactionBreakdown(courseSessionId: number): Promise<any> {
-    const reactions = await db.select().from(userReactions)
-      .where(eq(userReactions.courseSessionId, courseSessionId));
-
+  private computeReactionBreakdown(reactions: UserReaction[]): any {
     const breakdown: Record<string, number> = {};
     for (const r of reactions) {
       const emotion = r.emotion || 'unknown';
@@ -123,16 +165,7 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getStudentSessions(courseSessionId: number): Promise<UserSession[]> {
-    return db.select().from(userSessions)
-      .where(eq(userSessions.courseSessionId, courseSessionId));
-  }
-
-  async getEngagementTimeline(courseSessionId: number): Promise<any> {
-    const chats = await this.getChats(courseSessionId);
-    const reactions = await db.select().from(userReactions)
-      .where(eq(userReactions.courseSessionId, courseSessionId));
-
+  private computeEngagementTimeline(chats: SessionChat[], reactions: UserReaction[]): any {
     const timeline: Record<string, { chats: number; reactions: number }> = {};
 
     for (const c of chats) {
@@ -154,10 +187,7 @@ export class DatabaseStorage implements IStorage {
       .sort((a, b) => a.time.localeCompare(b.time));
   }
 
-  async getActivityCorrectnessMap(courseSessionId: number): Promise<Record<number, { answered: number; correct: number; percent: number }>> {
-    const polls = await db.select().from(userPolls)
-      .where(eq(userPolls.courseSessionId, courseSessionId));
-
+  private computeActivityCorrectnessMap(polls: UserPoll[]): Record<number, { answered: number; correct: number; percent: number }> {
     const map: Record<number, { answered: number; correct: number }> = {};
     for (const p of polls) {
       if (!p.classroomActivityId) continue;
@@ -178,6 +208,65 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
+  async isDataImported(): Promise<boolean> {
+    const result = await db.select({ count: count() }).from(courseSessions);
+    return (result[0]?.count ?? 0) > 0;
+  }
+
+  async getSessionOverview(): Promise<any> {
+    const sessions = await db.select().from(courseSessions).limit(1);
+    return sessions[0] || null;
+  }
+
+  async getTranscripts(courseSessionId: number): Promise<SessionTranscript[]> {
+    this.validateCourseSessionId(courseSessionId);
+    return db.select().from(sessionTranscripts)
+      .where(eq(sessionTranscripts.courseSessionId, courseSessionId))
+      .orderBy(asc(sessionTranscripts.lineOrder));
+  }
+
+  async getChats(courseSessionId: number): Promise<SessionChat[]> {
+    this.validateCourseSessionId(courseSessionId);
+    return db.select().from(sessionChats)
+      .where(eq(sessionChats.courseSessionId, courseSessionId))
+      .orderBy(asc(sessionChats.createdAtTs));
+  }
+
+  async getActivities(courseSessionId: number): Promise<ClassroomActivity[]> {
+    this.validateCourseSessionId(courseSessionId);
+    return db.select().from(classroomActivities)
+      .where(eq(classroomActivities.courseSessionId, courseSessionId));
+  }
+
+  async getPollStats(courseSessionId: number): Promise<any> {
+    this.validateCourseSessionId(courseSessionId);
+    const polls = await db.select().from(userPolls)
+      .where(eq(userPolls.courseSessionId, courseSessionId));
+    return this.computePollStats(polls);
+  }
+
+  async getReactionBreakdown(courseSessionId: number): Promise<any> {
+    this.validateCourseSessionId(courseSessionId);
+    const reactions = await db.select().from(userReactions)
+      .where(eq(userReactions.courseSessionId, courseSessionId));
+    return this.computeReactionBreakdown(reactions);
+  }
+
+  async getStudentSessions(courseSessionId: number): Promise<UserSession[]> {
+    this.validateCourseSessionId(courseSessionId);
+    return db.select().from(userSessions)
+      .where(eq(userSessions.courseSessionId, courseSessionId));
+  }
+
+  async getEngagementTimeline(courseSessionId: number): Promise<any> {
+    this.validateCourseSessionId(courseSessionId);
+    const [chats, reactions] = await Promise.all([
+      this.getChats(courseSessionId),
+      db.select().from(userReactions).where(eq(userReactions.courseSessionId, courseSessionId)),
+    ]);
+    return this.computeEngagementTimeline(chats, reactions);
+  }
+
   private parseSessionNameParts(name: string): { topic: string; level: string } {
     const match = name?.match(/^(.+?)(L\d+)$/);
     if (match) {
@@ -187,17 +276,29 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getDashboardData(courseSessionId: number): Promise<any> {
-    const [session, transcripts, chats, activities, pollStats, reactionData, students, engagementTimeline, activityCorrectness] = await Promise.all([
+    this.validateCourseSessionId(courseSessionId);
+
+    try {
+    // Fetch all data in parallel — each table queried exactly once
+    const [session, transcripts, chats, activities, allPolls, allReactions, students] = await Promise.all([
       this.getSessionOverview(),
       this.getTranscripts(courseSessionId),
       this.getChats(courseSessionId),
       this.getActivities(courseSessionId),
-      this.getPollStats(courseSessionId),
-      this.getReactionBreakdown(courseSessionId),
+      db.select().from(userPolls).where(eq(userPolls.courseSessionId, courseSessionId)),
+      db.select().from(userReactions).where(eq(userReactions.courseSessionId, courseSessionId)),
       this.getStudentSessions(courseSessionId),
-      this.getEngagementTimeline(courseSessionId),
-      this.getActivityCorrectnessMap(courseSessionId),
     ]);
+
+    if (!session) {
+      throw new Error(`No session found for courseSessionId: ${courseSessionId}`);
+    }
+
+    // Derive all stats from pre-fetched data — no duplicate queries
+    const pollStats = this.computePollStats(allPolls);
+    const reactionData = this.computeReactionBreakdown(allReactions);
+    const engagementTimeline = this.computeEngagementTimeline(chats, allReactions);
+    const activityCorrectness = this.computeActivityCorrectnessMap(allPolls);
 
     const teacherRecord = students.find((s: any) => s.userType === 'TEACHER');
     let teacherName = teacherRecord?.userName || 'Unknown Teacher';
@@ -236,7 +337,7 @@ export class DatabaseStorage implements IStorage {
     const feedback = this.generateFeedback(activitiesWithCorrectness, transcripts, chats, session, pollStats);
 
     const activityAnalyses = await this.generateAllActivityAnalyses(
-      courseSessionId, activitiesWithCorrectness, transcripts, chats, totalStudents, feedback
+      activitiesWithCorrectness, transcripts, chats, totalStudents, feedback, allPolls
     );
 
     return {
@@ -278,6 +379,14 @@ export class DatabaseStorage implements IStorage {
         avgLearningTime, feedback, activityAnalyses
       ),
     };
+
+    } catch (error) {
+      if (error instanceof Error) {
+        error.message = `Dashboard data load failed for session ${courseSessionId}: ${error.message}`;
+        throw error;
+      }
+      throw new Error(`Dashboard data load failed for session ${courseSessionId}: ${String(error)}`);
+    }
   }
 
   private getTranscriptForTimeRange(
@@ -302,34 +411,9 @@ export class DatabaseStorage implements IStorage {
     activityTimeline: any[],
     chats: any[]
   ): any[] {
-    const topicMap: [RegExp, string][] = [
-      [/الدائر[ةه]/i, "Circles"],
-      [/المستقيم|مستقيمات/i, "Lines in circles"],
-      [/نصف القطر|أنصاف.*القطر/i, "Radius"],
-      [/القطر/i, "Diameter"],
-      [/الوتر|وتر/i, "Chord"],
-      [/مماس|التماس/i, "Tangent"],
-      [/الزاوي[ةه]\s*المركزي[ةه]/i, "Central angles"],
-      [/الزاوي[ةه]\s*المحيطي[ةه]/i, "Inscribed angles"],
-      [/الزوايا|زاوي[ةه]/i, "Angles"],
-      [/المحيط/i, "Perimeter"],
-      [/المساح[ةه]/i, "Area"],
-      [/المضلع|مضلعات|رباعي/i, "Polygons"],
-      [/القوس/i, "Arc"],
-      [/طاء.*نق|نق\s*تربيع/i, "Circle formulas"],
-      [/مربع|مثلث|سداسي/i, "Shapes in circles"],
-    ];
-
-    const formatTime = (sec: number) => {
-      const h = Math.floor(sec / 3600);
-      const m = Math.floor((sec % 3600) / 60);
-      const s = sec % 60;
-      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    };
-
     const concepts: any[] = [];
 
-    for (const [pattern, conceptName] of topicMap) {
+    for (const [pattern, conceptName] of DatabaseStorage.TOPIC_MAP) {
       const matchingSegments = sorted.filter(t => pattern.test(t.text));
       if (matchingSegments.length === 0) continue;
 
@@ -346,12 +430,12 @@ export class DatabaseStorage implements IStorage {
           excerpts.push(seg.text.substring(0, 120));
         }
         if (i > 0 && seg.startSec - rangeEnd > 60) {
-          timeRanges.push(`${formatTime(rangeStart)}–${formatTime(rangeEnd)}`);
+          timeRanges.push(`${this.formatTime(rangeStart)}–${this.formatTime(rangeEnd)}`);
           rangeStart = seg.startSec;
         }
         rangeEnd = seg.endSec;
       }
-      timeRanges.push(`${formatTime(rangeStart)}–${formatTime(rangeEnd)}`);
+      timeRanges.push(`${this.formatTime(rangeStart)}–${this.formatTime(rangeEnd)}`);
 
       const relatedActivities = activityTimeline.filter(atl => {
         const preTopics = atl.preTeaching?.topics || '';
@@ -368,9 +452,8 @@ export class DatabaseStorage implements IStorage {
         if (c.userType !== 'STUDENT') return false;
         const ts = this.parseTimeToSeconds(c.createdAtTs || '');
         if (ts === null) return false;
-        const confusionPatterns = /ما\s*فهم|مو\s*فاهم|مو\s*واضح|ما\s*عرف|صعب|ما\s*فهمت|مش\s*فاهم|كيف|وش\s*يعني|يعني\s*ايش|ما\s*وضح|\?\?|اعيد/i;
         const duringExplanation = matchingSegments.some(seg => ts >= seg.startSec - 30 && ts <= seg.endSec + 60);
-        return duringExplanation && confusionPatterns.test(c.messageText || '');
+        return duringExplanation && DatabaseStorage.CONFUSION_PATTERN.test(c.messageText || '');
       }).length;
 
       let effectiveness: string;
@@ -425,36 +508,8 @@ export class DatabaseStorage implements IStorage {
   private buildTeachingClarityEvaluation(
     sorted: { startSec: number; endSec: number; text: string }[]
   ): any[] {
-    const formatTime = (sec: number) => {
-      const h = Math.floor(sec / 3600);
-      const m = Math.floor((sec % 3600) / 60);
-      const s = sec % 60;
-      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    };
-
-    const continuousBlocks: { startSec: number; endSec: number; texts: string[] }[] = [];
     if (sorted.length === 0) return [];
-
-    let blockStart = sorted[0].startSec;
-    let blockEnd = sorted[0].endSec;
-    let blockTexts = [sorted[0].text];
-
-    for (let i = 1; i < sorted.length; i++) {
-      if (sorted[i].startSec - blockEnd <= 5) {
-        blockEnd = Math.max(blockEnd, sorted[i].endSec);
-        blockTexts.push(sorted[i].text);
-      } else {
-        if (blockEnd - blockStart >= 30) {
-          continuousBlocks.push({ startSec: blockStart, endSec: blockEnd, texts: blockTexts });
-        }
-        blockStart = sorted[i].startSec;
-        blockEnd = sorted[i].endSec;
-        blockTexts = [sorted[i].text];
-      }
-    }
-    if (blockEnd - blockStart >= 30) {
-      continuousBlocks.push({ startSec: blockStart, endSec: blockEnd, texts: blockTexts });
-    }
+    const continuousBlocks = this.buildContinuousBlocks(sorted, 5, 30);
 
     const stepByStepPattern = /أولا|ثانيا|ثالثا|الخطوة|أول شي|بعدين|ثم|بعد كذا|نبدأ.*ب|أول حاجة|1\.|2\.|3\./i;
     const repetitionPattern = /يعني|بمعنى|نقدر نقول|بالعربي|بشكل ثاني|مرة ثانية|نعيد/i;
@@ -503,7 +558,7 @@ export class DatabaseStorage implements IStorage {
       }
 
       return {
-        timestamp: `${formatTime(block.startSec)}–${formatTime(block.endSec)}`,
+        timestamp: `${this.formatTime(block.startSec)}–${this.formatTime(block.endSec)}`,
         durationMin: Math.round(durationSec / 60 * 10) / 10,
         concept: topics,
         behaviors,
@@ -573,14 +628,6 @@ export class DatabaseStorage implements IStorage {
     sorted: { startSec: number; endSec: number; text: string }[],
     chats: any[]
   ): any[] {
-    const formatTime = (sec: number) => {
-      const h = Math.floor(sec / 3600);
-      const m = Math.floor((sec % 3600) / 60);
-      const s = sec % 60;
-      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    };
-
-    const confusionPatterns = /ما\s*فهم|مو\s*فاهم|مو\s*واضح|ما\s*عرف|صعب|ما\s*فهمت|مش\s*فاهم|كيف|وش\s*يعني|يعني\s*ايش|ما\s*وضح|\?\?|اعيد/i;
 
     const studentChats = chats
       .filter((c: any) => c.userType === 'STUDENT')
@@ -589,7 +636,7 @@ export class DatabaseStorage implements IStorage {
         text: c.messageText || '',
         name: c.creatorName || 'student',
       }))
-      .filter(c => c.ts !== null && confusionPatterns.test(c.text))
+      .filter(c => c.ts !== null && DatabaseStorage.CONFUSION_PATTERN.test(c.text))
       .sort((a, b) => a.ts! - b.ts!);
 
     if (studentChats.length === 0) return [];
@@ -635,7 +682,7 @@ export class DatabaseStorage implements IStorage {
           : "No teacher response detected — confusion was ignored";
 
       return {
-        timestamp: formatTime(cluster.startSec),
+        timestamp: this.formatTime(cluster.startSec),
         concept: topic,
         signalCount: cluster.messages.length,
         messages: cluster.messages.slice(0, 3).map(m => `"${m.text.substring(0, 60)}" — ${m.name}`),
@@ -654,13 +701,6 @@ export class DatabaseStorage implements IStorage {
     chats: any[],
     confusionMoments: any[]
   ): any[] {
-    const formatTime = (sec: number) => {
-      const h = Math.floor(sec / 3600);
-      const m = Math.floor((sec % 3600) / 60);
-      const s = sec % 60;
-      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    };
-
     const patterns: any[] = [];
 
     const talkDuringActivities = activityTimeline.filter(a => a.duringTeaching.teacherTalking && a.duringTeaching.durationMin > 0.3);
@@ -692,7 +732,7 @@ export class DatabaseStorage implements IStorage {
       patterns.push({
         pattern: "Strong engagement prompting behavior",
         occurrences: engagementPrompts.length,
-        details: engagementPrompts.slice(0, 3).map(t => `${formatTime(t.startSec)}: "${t.text.substring(0, 80)}"`),
+        details: engagementPrompts.slice(0, 3).map(t => `${this.formatTime(t.startSec)}: "${t.text.substring(0, 80)}"`),
         impact: `The teacher actively prompted students to participate ${engagementPrompts.length} times, resulting in ${studentChats.length} student chat messages.`,
         recommendation: "Continue this practice — prompting drives engagement and gives the teacher visibility into student understanding.",
       });
@@ -786,35 +826,7 @@ export class DatabaseStorage implements IStorage {
     session: any,
     totalStudents: number
   ): any {
-    const formatTime = (sec: number) => {
-      const h = Math.floor(sec / 3600);
-      const m = Math.floor((sec % 3600) / 60);
-      const s = sec % 60;
-      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    };
-
-    const continuousBlocks: { startSec: number; endSec: number; texts: string[] }[] = [];
-    if (sorted.length > 0) {
-      let blockStart = sorted[0].startSec;
-      let blockEnd = sorted[0].endSec;
-      let blockTexts = [sorted[0].text];
-      for (let i = 1; i < sorted.length; i++) {
-        if (sorted[i].startSec - blockEnd <= 5) {
-          blockEnd = Math.max(blockEnd, sorted[i].endSec);
-          blockTexts.push(sorted[i].text);
-        } else {
-          if (blockEnd - blockStart >= 20) {
-            continuousBlocks.push({ startSec: blockStart, endSec: blockEnd, texts: blockTexts });
-          }
-          blockStart = sorted[i].startSec;
-          blockEnd = sorted[i].endSec;
-          blockTexts = [sorted[i].text];
-        }
-      }
-      if (blockEnd - blockStart >= 20) {
-        continuousBlocks.push({ startSec: blockStart, endSec: blockEnd, texts: blockTexts });
-      }
-    }
+    const continuousBlocks = this.buildContinuousBlocks(sorted, 5, 20);
 
     const introPattern = /الحين نتكلم عن|اليوم بنتعلم|الدرس اليوم|نبدأ ب|موضوعنا|بنشرح/i;
     const stepPattern = /أولا|ثانيا|ثالثا|الخطوة|أول شي|بعدين|ثم|بعد كذا|نبدأ.*ب|أول حاجة/i;
@@ -877,7 +889,7 @@ export class DatabaseStorage implements IStorage {
       }
 
       explanationReviews.push({
-        timestamp: `${formatTime(block.startSec)}–${formatTime(block.endSec)}`,
+        timestamp: `${this.formatTime(block.startSec)}–${this.formatTime(block.endSec)}`,
         durationMin: Math.round(durationSec / 60 * 10) / 10,
         concept: topics,
         strengths,
@@ -898,7 +910,7 @@ export class DatabaseStorage implements IStorage {
         encourageDurationSec += (seg.endSec - seg.startSec);
         if (encourageExamples.length < 5) {
           encourageExamples.push({
-            timestamp: formatTime(seg.startSec),
+            timestamp: this.formatTime(seg.startSec),
             text: seg.text.substring(0, 100),
           });
         }
@@ -1103,19 +1115,7 @@ export class DatabaseStorage implements IStorage {
       .map(a => ({ ...a, startSec: a.startSec as number, endSec: a.endSec as number }))
       .sort((a, b) => a.startSec - b.startSec);
 
-    const typeLabels: Record<string, string> = {
-      SECTION_CHECK: "Section Check",
-      EXIT_TICKET: "Exit Ticket",
-      TEAM_EXERCISE: "Team Exercise",
-    };
-
     const timeline: any[] = [];
-    const formatTime = (sec: number) => {
-      const h = Math.floor(sec / 3600);
-      const m = Math.floor((sec % 3600) / 60);
-      const s = sec % 60;
-      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    };
 
     for (let i = 0; i < happened.length; i++) {
       const act = happened[i];
@@ -1133,14 +1133,14 @@ export class DatabaseStorage implements IStorage {
       const confusionDuring = this.detectChatConfusion(chats, act.startSec, act.endSec);
 
       const correctPercent = act.correctness?.percent ?? 0;
-      const label = typeLabels[act.activityType] || act.activityType;
+      const label = DatabaseStorage.TYPE_NAME_EN[act.activityType] || act.activityType;
 
       const entry: any = {
         activityId: act.activityId,
         activityType: act.activityType,
         label,
-        startTime: formatTime(act.startSec),
-        endTime: formatTime(act.endSec),
+        startTime: this.formatTime(act.startSec),
+        endTime: this.formatTime(act.endSec),
         correctPercent,
         preTeaching: {
           durationMin: Math.round(preActivity.totalSec / 60 * 10) / 10,
@@ -1237,22 +1237,9 @@ export class DatabaseStorage implements IStorage {
     }
     const totalTeacherTalkMin = Math.round(totalTeacherTalkSec / 60 * 10) / 10;
 
-    const continuousSegments: { startSec: number; endSec: number; durationSec: number }[] = [];
-    if (sorted.length > 0) {
-      let segStart: number = sorted[0].startSec;
-      let segEnd: number = sorted[0].endSec;
-      for (let i = 1; i < sorted.length; i++) {
-        const gap = sorted[i].startSec - segEnd;
-        if (gap <= 5) {
-          segEnd = Math.max(segEnd, sorted[i].endSec);
-        } else {
-          continuousSegments.push({ startSec: segStart, endSec: segEnd, durationSec: segEnd - segStart });
-          segStart = sorted[i].startSec;
-          segEnd = sorted[i].endSec;
-        }
-      }
-      continuousSegments.push({ startSec: segStart, endSec: segEnd, durationSec: segEnd - segStart });
-    }
+    const continuousSegments = this.buildContinuousBlocks(sorted, 5).map(b => ({
+      startSec: b.startSec, endSec: b.endSec, durationSec: b.endSec - b.startSec,
+    }));
     const longSegments = continuousSegments.filter(s => s.durationSec > 120);
     const longestSegMin = continuousSegments.length > 0
       ? Math.round(Math.max(...continuousSegments.map(s => s.durationSec)) / 60 * 10) / 10
@@ -1269,13 +1256,6 @@ export class DatabaseStorage implements IStorage {
     const confusionMoments = this.buildConfusionMoments(sorted, chats);
     const teachingPatterns = this.buildTeachingPatterns(sorted, activityTimeline, chats, confusionMoments);
     const teacherCommunication = this.buildTeacherCommunicationInsights(sorted, chats, activityTimeline, session, totalStudents);
-
-    const formatTime = (sec: number) => {
-      const h = Math.floor(sec / 3600);
-      const m = Math.floor((sec % 3600) / 60);
-      const s = sec % 60;
-      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    };
 
     // === 1. Content Mastery and Explanation ===
     let contentScore = 3;
@@ -1408,7 +1388,7 @@ export class DatabaseStorage implements IStorage {
           sorted.filter(t => t.startSec >= seg.startSec && t.endSec <= seg.endSec).map(t => t.text)
         );
         const dMin = Math.round(seg.durationSec / 60 * 10) / 10;
-        comments3.push(`Long uninterrupted talk: ${formatTime(seg.startSec)}–${formatTime(seg.endSec)} (${dMin} min). Break this with a student check-in or chat prompt.`);
+        comments3.push(`Long uninterrupted talk: ${this.formatTime(seg.startSec)}–${this.formatTime(seg.endSec)} (${dMin} min). Break this with a student check-in or chat prompt.`);
       }
     }
 
@@ -1717,12 +1697,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   private async generateAllActivityAnalyses(
-    courseSessionId: number,
     activities: any[],
     transcripts: SessionTranscript[],
     chats: SessionChat[],
     totalStudents: number,
-    feedback: { wentWell: any[]; needsImprovement: any[] }
+    feedback: { wentWell: any[]; needsImprovement: any[] },
+    allPolls: UserPoll[]
   ): Promise<any[]> {
     const canonicalOrder = ['SECTION_CHECK', 'TEAM_EXERCISE', 'EXIT_TICKET'];
     const typeOrder: Record<string, number> = { SECTION_CHECK: 0, TEAM_EXERCISE: 1, EXIT_TICKET: 2 };
@@ -1741,8 +1721,8 @@ export class DatabaseStorage implements IStorage {
 
       const instances: any[] = [];
       for (const act of typeActivities) {
-        const instance = await this.generateSingleActivityAnalysis(
-          courseSessionId, act, transcripts, chats, totalStudents
+        const instance = this.generateSingleActivityAnalysis(
+          act, transcripts, chats, totalStudents, allPolls
         );
 
         const relatedWell = feedback.wentWell.filter(f => f.activityId === act.activityId);
@@ -1866,17 +1846,14 @@ export class DatabaseStorage implements IStorage {
     return Math.round(seconds / 60 * 10) / 10;
   }
 
-  private async generateSingleActivityAnalysis(
-    courseSessionId: number,
+  private generateSingleActivityAnalysis(
     act: any,
     transcripts: SessionTranscript[],
     chats: SessionChat[],
-    totalStudents: number
-  ): Promise<any> {
-    const polls = await db.select().from(userPolls)
-      .where(eq(userPolls.courseSessionId, courseSessionId));
-
-    const actPolls = polls.filter(p => p.classroomActivityId === act.activityId);
+    totalStudents: number,
+    allPolls: UserPoll[]
+  ): any {
+    const actPolls = allPolls.filter(p => p.classroomActivityId === act.activityId);
 
     const byQuestion: Record<string, { text: string; seen: number; answered: number; correct: number }> = {};
     for (const p of actPolls) {
@@ -2133,12 +2110,7 @@ export class DatabaseStorage implements IStorage {
 
       const calledStudentOnStage = postActivityTranscripts.some(t => stagePatterns.test(t.text));
 
-      const typeNameEn: Record<string, string> = {
-        SECTION_CHECK: "Section Check",
-        EXIT_TICKET: "Exit Ticket",
-        TEAM_EXERCISE: "Team Exercise",
-      };
-      const actLabel = `${typeNameEn[act.activityType] || act.activityType} (${correctPercent}% correctness)`;
+      const actLabel = `${DatabaseStorage.TYPE_NAME_EN[act.activityType] || act.activityType} (${correctPercent}% correctness)`;
       const explanationMin = this.toMin(explanationTimeSec);
 
       if (correctPercent >= 70) {
@@ -2266,12 +2238,7 @@ export class DatabaseStorage implements IStorage {
         }
       }
 
-      const typeNameEn: Record<string, string> = {
-        SECTION_CHECK: "Section Check",
-        EXIT_TICKET: "Exit Ticket",
-        TEAM_EXERCISE: "Team Exercise",
-      };
-      const label = `${typeNameEn[act.activityType] || act.activityType} (${act.startTime})`;
+      const label = `${DatabaseStorage.TYPE_NAME_EN[act.activityType] || act.activityType} (${act.startTime})`;
       const correctPercent = act.correctness?.percent ?? 0;
 
       activityTimeData.push({ activityId: act.activityId, label, correctPercent, preTeachSec });
@@ -2314,21 +2281,7 @@ export class DatabaseStorage implements IStorage {
 
   private extractTopics(texts: string[]): string {
     const topicMap: [RegExp, string][] = [
-      [/الدائر[ةه]/i, "Circles"],
-      [/المستقيم|مستقيمات/i, "Lines in circles"],
-      [/نصف القطر|أنصاف.*القطر/i, "Radius"],
-      [/القطر/i, "Diameter"],
-      [/الوتر|وتر/i, "Chord"],
-      [/مماس|التماس/i, "Tangent"],
-      [/الزاوي[ةه]\s*المركزي[ةه]/i, "Central angles"],
-      [/الزاوي[ةه]\s*المحيطي[ةه]/i, "Inscribed angles"],
-      [/الزوايا|زاوي[ةه]/i, "Angles"],
-      [/المحيط/i, "Perimeter"],
-      [/المساح[ةه]/i, "Area"],
-      [/المضلع|مضلعات|رباعي/i, "Polygons"],
-      [/القوس/i, "Arc"],
-      [/طاء.*نق|نق\s*تربيع/i, "Circle formulas"],
-      [/مربع|مثلث|سداسي/i, "Shapes in circles"],
+      ...DatabaseStorage.TOPIC_MAP,
       [/اشرح|اشرحي|يلا.*اشرح/i, "Student called to explain"],
     ];
 
@@ -2343,7 +2296,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   private detectChatConfusion(chats: SessionChat[], startSec: number, endSec: number): { confused: boolean; examples: string[] } {
-    const confusionPatterns = /ما\s*فهم|مو\s*فاهم|مو\s*واضح|ما\s*عرف|صعب|ما\s*فهمت|مش\s*فاهم|كيف|وش\s*يعني|يعني\s*ايش|ما\s*وضح|\?\?|اعيد/i;
     const frustrationPatterns = /😭|😢|😞|💔/;
 
     const nearbyChats = chats.filter(c => {
@@ -2357,7 +2309,7 @@ export class DatabaseStorage implements IStorage {
     let confused = false;
     for (const chat of nearbyChats) {
       const text = chat.messageText || '';
-      if (confusionPatterns.test(text) || frustrationPatterns.test(text)) {
+      if (DatabaseStorage.CONFUSION_PATTERN.test(text) || frustrationPatterns.test(text)) {
         confused = true;
         if (examples.length < 3) {
           examples.push(`"${text.substring(0, 50)}" — ${chat.creatorName || 'student'}`);
@@ -2463,8 +2415,7 @@ export class DatabaseStorage implements IStorage {
     const studentChatCount = studentChatsDuring.length;
     const chatCountDuring = allChatsDuring.length;
 
-    const confusionPatterns = /ما\s*فهم|مو\s*فاهم|مو\s*واضح|ما\s*عرف|صعب|ما\s*فهمت|مش\s*فاهم|كيف|وش\s*يعني|يعني\s*ايش|ما\s*وضح|\?\?|اعيد|ما\s*قدر/i;
-    const confusionChats = studentChatsDuring.filter(c => confusionPatterns.test(c.messageText || ''));
+    const confusionChats = studentChatsDuring.filter(c => DatabaseStorage.CONFUSION_PATTERN.test(c.messageText || ''));
     const hadConfusion = confusionChats.length > 0;
     const confusionExamples = confusionChats.slice(0, 3).map(c =>
       `"${(c.messageText || '').substring(0, 60)}" — ${c.creatorName || 'student'}`
@@ -2565,47 +2516,28 @@ export class DatabaseStorage implements IStorage {
     const MAX_CONTINUOUS_SEC = 120;
     const MAX_TOTAL_TALK_MIN = 15;
 
-    const sorted = transcriptTimes
-      .filter(t => t.startSec !== null && t.endSec !== null)
-      .sort((a, b) => a.startSec! - b.startSec!);
+    const sortedTyped = transcriptTimes
+      .filter((t): t is { startSec: number; endSec: number; text: string } => t.startSec !== null && t.endSec !== null)
+      .sort((a, b) => a.startSec - b.startSec);
 
-    if (sorted.length === 0) return;
+    if (sortedTyped.length === 0) return;
 
-    const continuousSegments: { startSec: number; endSec: number; durationSec: number }[] = [];
-    let segStart = sorted[0].startSec!;
-    let segEnd = sorted[0].endSec!;
-
-    for (let i = 1; i < sorted.length; i++) {
-      const gap = sorted[i].startSec! - segEnd;
-      if (gap <= GAP_THRESHOLD) {
-        segEnd = Math.max(segEnd, sorted[i].endSec!);
-      } else {
-        continuousSegments.push({ startSec: segStart, endSec: segEnd, durationSec: segEnd - segStart });
-        segStart = sorted[i].startSec!;
-        segEnd = sorted[i].endSec!;
-      }
-    }
-    continuousSegments.push({ startSec: segStart, endSec: segEnd, durationSec: segEnd - segStart });
+    const continuousSegments = this.buildContinuousBlocks(sortedTyped, GAP_THRESHOLD).map(b => ({
+      startSec: b.startSec, endSec: b.endSec, durationSec: b.endSec - b.startSec,
+    }));
 
     let totalTeacherTalkSec = 0;
-    for (const t of sorted) {
-      totalTeacherTalkSec += (t.endSec! - t.startSec!);
+    for (const t of sortedTyped) {
+      totalTeacherTalkSec += (t.endSec - t.startSec);
     }
     const totalTeacherTalkMin = Math.round(totalTeacherTalkSec / 60 * 10) / 10;
 
     const longSegments = continuousSegments.filter(s => s.durationSec > MAX_CONTINUOUS_SEC);
 
-    const formatTime = (sec: number) => {
-      const h = Math.floor(sec / 3600);
-      const m = Math.floor((sec % 3600) / 60);
-      const s = sec % 60;
-      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    };
-
     const segmentDetails: any[] = [];
     for (const seg of longSegments) {
-      const segTexts = sorted
-        .filter(t => t.startSec! >= seg.startSec && t.endSec! <= seg.endSec)
+      const segTexts = sortedTyped
+        .filter(t => t.startSec >= seg.startSec && t.endSec <= seg.endSec)
         .map(t => t.text);
       const topics = this.extractTopics(segTexts);
       const durationMin = Math.round(seg.durationSec / 60 * 10) / 10;
@@ -2619,7 +2551,7 @@ export class DatabaseStorage implements IStorage {
 
       const chatContext = this.detectChatConfusion(chats, seg.startSec, seg.endSec);
 
-      let context = `${formatTime(seg.startSec)}–${formatTime(seg.endSec)} (${durationMin} min): The teacher was discussing ${topics}.`;
+      let context = `${this.formatTime(seg.startSec)}–${this.formatTime(seg.endSec)} (${durationMin} min): The teacher was discussing ${topics}.`;
 
       if (nearbyActivities.length > 0) {
         const actDetails = nearbyActivities.map(a => {
@@ -2652,7 +2584,7 @@ export class DatabaseStorage implements IStorage {
       needsImprovement.push({
         category: "pedagogy",
         activity: "Continuous talk",
-        detail: `The teacher had ${longSegments.length} continuous talk periods exceeding 2 minutes. The longest was ${longestMin} min (${formatTime(longestSeg.startSec)}–${formatTime(longestSeg.endSec)}). Break long periods with questions or student interaction.`,
+        detail: `The teacher had ${longSegments.length} continuous talk periods exceeding 2 minutes. The longest was ${longestMin} min (${this.formatTime(longestSeg.startSec)}–${this.formatTime(longestSeg.endSec)}). Break long periods with questions or student interaction.`,
         recommended: "Under 2 minutes per segment",
         actual: `${longestMin} min longest segment`,
         segments: segmentDetails,
